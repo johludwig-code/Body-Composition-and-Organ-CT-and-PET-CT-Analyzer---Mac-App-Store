@@ -56,6 +56,11 @@ CLINICAL = [
 PRUNE_DIRS = {"validation"}
 PRUNE_FILES = {"checkpoint_best.pth", "checkpoint_latest.pth", "progress.png", "debug.json"}
 PRUNE_SUFFIXES = (".log", ".txt")
+# The archives were zipped on a Mac and carry AppleDouble files (`._name`),
+# 4 KB each, next to their entries. They are resource-fork
+# leftovers, not data, and nothing in a signed bundle should be unexplained.
+PRUNE_PREFIXES = ("._",)
+PRUNE_NAMES = {".DS_Store"}
 
 
 def sha256(path: Path) -> str:
@@ -81,7 +86,12 @@ def prune(folder: Path) -> list[str]:
         if path.is_dir() and path.name in PRUNE_DIRS:
             shutil.rmtree(path)
             removed.append(path.relative_to(folder).as_posix())
-        elif path.is_file() and (path.name in PRUNE_FILES or path.name.endswith(PRUNE_SUFFIXES)):
+        elif path.is_file() and (
+            path.name in PRUNE_FILES
+            or path.name in PRUNE_NAMES
+            or path.name.endswith(PRUNE_SUFFIXES)
+            or path.name.startswith(PRUNE_PREFIXES)
+        ):
             path.unlink()
             removed.append(path.relative_to(folder).as_posix())
     return removed
