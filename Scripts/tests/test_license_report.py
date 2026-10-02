@@ -11,6 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import license_report
+import verify_bundle
 
 
 class _Dist:
@@ -82,3 +83,9 @@ def test_the_approvals_file_names_an_adr_for_every_entry() -> None:
     for name, reason in approvals.items():
         if not name.startswith("_"):
             assert "ADR" in reason, name
+
+
+def test_the_static_notices_pass_the_bundle_check() -> None:
+    # The notices are copied into the app, and the first macOS build failed
+    # verify_bundle.py because they named the scheme the patch removes.
+    assert verify_bundle.FORBIDDEN_STRING not in license_report.STATIC_ENTRIES.encode()

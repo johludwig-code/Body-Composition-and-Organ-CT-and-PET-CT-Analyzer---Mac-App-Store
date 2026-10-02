@@ -77,6 +77,8 @@ _TEXT_HINTS = [
 ]
 
 # Bundled components that are not Python distributions.
+# These notices ship inside the app, where verify_bundle.py rejects the
+# enterprise scheme's name anywhere; the first macOS build failed on this text.
 STATIC_ENTRIES = """\
 ## CPython 3.12 (python-build-standalone)
 
@@ -84,8 +86,9 @@ Licence: PSF-2.0, with the licences of the libraries it bundles (OpenSSL
 Apache-2.0, SQLite public domain, zlib, libffi MIT, XZ, bzip2, mpdecimal,
 ncurses). Source: https://github.com/astral-sh/python-build-standalone
 
-The file `urllib/parse.py` was modified: the scheme "itms-services" was
-removed from `uses_netloc`, as CPython's `--with-app-store-compliance` does.
+The file `urllib/parse.py` was modified: Apple's enterprise-distribution URL
+scheme was removed from `uses_netloc`, as CPython's
+`--with-app-store-compliance` does.
 
 ## MOOSE model weights
 
