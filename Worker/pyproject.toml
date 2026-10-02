@@ -1,0 +1,26 @@
+[project]
+name = "bcoa-worker"
+version = "0.1.0"
+description = "Worker process of the Body Composition and Organ CT and PET-CT Analyzer"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "S", "PT", "RUF"]
+# S101: assert is how pytest checks. S603/S607: the worker starts dcm2niix from
+# a path inside the signed bundle, which is the point of bundling it.
+ignore = ["S101", "S603", "S607", "RUF001", "RUF002", "RUF003"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bcoa_worker", "conftest"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use broad pytest.raises on purpose where the message is not the point.
+"tests/*" = ["PT011", "PT018", "S108", "E501"]

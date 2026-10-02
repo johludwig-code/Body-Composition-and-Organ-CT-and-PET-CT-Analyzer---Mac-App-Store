@@ -1,0 +1,42 @@
+# Active once BCOAnalyzer/ is the root of its own repository (ADR 0002).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  worker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Worker and script tests
+        run: |
+          cd Worker
+          uv run --no-project --python 3.12 --with pytest --with jsonschema --with numpy --with ruff \
+            bash -c 'ruff check . && ruff format --check . && pytest -q'
+          cd ..
+          uv run --no-project --python 3.12 --with pytest --with ruff \
+            bash -c 'ruff check --config Worker/pyproject.toml Scripts && pytest -q Scripts/tests'
+
+  swift:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: BCOAKit
+        run: cd Packages/BCOAKit && swift test
+      - name: BCOAStore
+        run: cd Packages/BCOAStore && swift test
+
+  app:
+    runs-on: macos-15
+    needs: [swift]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate and build the UI (no backend, ad hoc signed)
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -project BCOAnalyzer.xcodeproj -scheme BCOAnalyzer -configuration Debug \
+            -derivedDataPath build CODE_SIGN_IDENTITY=- build

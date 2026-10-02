@@ -1,0 +1,14 @@
+# Everything the bundled worker imports at run time. Exact pins for the
+# packages whose behaviour defines the published method; the rest are pinned
+# by requirements.lock, which is what the build installs (with hashes).
+#
+# Regenerate the lock only on purpose, and record why in docs/adr:
+#   MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile requirements.in \
+#       --python-platform aarch64-apple-darwin --python-version 3.12 \
+#       --generate-hashes --upgrade -o requirements.lock
+# Without MACOSX_DEPLOYMENT_TARGET uv assumes macOS 13 and silently falls
+# back to torch 2.11, the last release with macOS 13 wheels.
+moosez==3.2.2
+XlsxWriter
+pydicom
+SimpleITK

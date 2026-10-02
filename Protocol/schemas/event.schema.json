@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bcoa/event.schema.json",
+  "title": "Worker event, protocol version 1",
+  "description": "One line of JSON on the worker's protocol channel. Messages are English and never contain patient names, folder paths of source data or DICOM identifiers.",
+  "oneOf": [
+    {"$ref": "#/$defs/hello"},
+    {"$ref": "#/$defs/progress"},
+    {"$ref": "#/$defs/heartbeat"},
+    {"$ref": "#/$defs/log"},
+    {"$ref": "#/$defs/artifact"},
+    {"$ref": "#/$defs/result"},
+    {"$ref": "#/$defs/error"},
+    {"$ref": "#/$defs/done"}
+  ],
+  "$defs": {
+    "hello": {
+      "type": "object",
+      "required": ["type", "protocol_version", "versions"],
+      "properties": {
+        "type": {"const": "hello"},
+        "protocol_version": {"type": "integer", "minimum": 1},
+        "versions": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "progress": {
+      "type": "object",
+      "required": ["type", "job_id", "stage", "fraction", "message"],
+      "properties": {
+        "type": {"const": "progress"},
+        "job_id": {"type": "string"},
+        "stage": {"enum": ["index", "convert", "check", "segment", "metrics", "viewer_cache", "export", "selftest"]},
+        "model": {"type": "string"},
+        "fraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "message": {"type": "string"}
+      }
+    },
+    "heartbeat": {
+      "type": "object",
+      "required": ["type", "job_id", "ts"],
+      "properties": {
+        "type": {"const": "heartbeat"},
+        "job_id": {"type": "string"},
+        "ts": {"type": "string", "format": "date-time"}
+      }
+    },
+    "log": {
+      "type": "object",
+      "required": ["type", "level", "message"],
+      "properties": {
+        "type": {"const": "log"},
+        "level": {"enum": ["debug", "info", "warning", "error"]},
+        "message": {"type": "string"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["type", "kind", "path", "sha256"],
+      "properties": {
+        "type": {"const": "artifact"},
+        "kind": {"enum": ["nifti", "labelmap", "viewer_cache", "metrics", "export", "log", "report"]},
+        "path": {"type": "string", "description": "Relative to the project folder."},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["type", "job_id", "payload"],
+      "properties": {
+        "type": {"const": "result"},
+        "job_id": {"type": "string"},
+        "payload": {"type": "object"}
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["type", "code", "message", "recoverable"],
+      "properties": {
+        "type": {"const": "error"},
+        "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "message": {"type": "string"},
+        "recoverable": {"type": "boolean"}
+      }
+    },
+    "done": {
+      "type": "object",
+      "required": ["type", "job_id", "status"],
+      "properties": {
+        "type": {"const": "done"},
+        "job_id": {"type": "string"},
+        "status": {"enum": ["ok", "failed", "cancelled"]}
+      }
+    }
+  }
+}
