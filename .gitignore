@@ -1,0 +1,15 @@
+build/
+*.xcodeproj/
+DerivedData/
+.build/
+.swiftpm/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+Models/*
+!Models/manifest.lock.json
+!Models/README.md
+*.dmg
+*.pkg
