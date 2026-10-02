@@ -53,7 +53,13 @@ app already has them in `project.sqlite`.
    with none, "No visual quality control was recorded for these results."
    The paragraph is written to be pasted into a paper, and the first export
    of a real case claimed a review that never happened.
-7. **Not in this step.** The reproducibility package (M6) is refused with a
+7. **Region.** The `labels` sheet says for every label which part of the
+   scan it is measured in, and the data dictionary repeats it for the wide
+   columns. Every model covers the whole field of view except
+   `clin_ct_body_composition`, which MOOSE restricts to the z-range of the L3
+   vertebra; on a real whole-body CT that was a 50 mm slab, and a muscle
+   volume from it reads like the whole body's unless the file says otherwise.
+8. **Not in this step.** The reproducibility package (M6) is refused with a
    clear error rather than silently left out. Hashed study UIDs are not
    exported yet, because the per-project key has no column; rows are traced
    through pseudonym, timepoint and run ID instead.

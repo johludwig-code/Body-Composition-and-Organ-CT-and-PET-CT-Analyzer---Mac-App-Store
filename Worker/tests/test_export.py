@@ -350,6 +350,22 @@ def test_methods_text_and_provenance(project) -> None:
     assert json.loads(str(provenance["export_options"]))["layout"] == "wide"
 
 
+def test_body_composition_says_it_is_measured_at_l3_only(project) -> None:
+    # MOOSE keeps only the z-range of L3 for this model; without saying so a
+    # muscle volume reads like the whole body's.
+    labels = _rows(_export(project).sheet("labels"))
+    regions = {(r["model"], r["label"]): r["region"] for r in labels}
+    assert regions[("clin_ct_body_composition", "skeletal_muscle")] == (
+        "z-range of the L3 vertebra only (MOOSE workflow)"
+    )
+    assert regions[("clin_ct_organs", "liver")] == "whole field of view"
+    dictionary = {
+        r["column"]: r["description"] for r in _rows(_export(project).sheet("data_dictionary"))
+    }
+    assert "L3 vertebra only" in str(dictionary["body_composition__skeletal_muscle__volume_ml__t1"])
+    assert "L3" not in str(dictionary["organs__liver__volume_ml__t1"])
+
+
 def _qc_sentence(project: export_data.ProjectData) -> str:
     return _export(project).methods_text.split("(PyTorch mps). ")[1]
 

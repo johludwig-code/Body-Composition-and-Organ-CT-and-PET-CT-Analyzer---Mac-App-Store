@@ -52,6 +52,16 @@ _METRIC_TYPES: dict[str, tuple[ColumnType, str, str]] = {
     ),
 }
 
+# Where in the scan a model's labels can lie. MOOSE runs body composition on
+# the L1-L5 range found by clin_ct_fast_vertebrae and keeps only the z-range
+# of L3 (moosez.workflows, crop_label 22). On a real whole-body CT that was a
+# 50 mm slab: "skeletal_muscle 362 mL" is the muscle at L3, not in the body,
+# and nothing in the numbers says so.
+WHOLE_FIELD = "whole field of view"
+MODEL_REGIONS = {
+    "clin_ct_body_composition": "z-range of the L3 vertebra only (MOOSE workflow)",
+}
+
 CITATIONS = (
     "Shiyam Sundar LK, Yu J, Muzik O, et al. Fully automated, semantic segmentation of "
     "whole-body 18F-FDG PET/CT images based on data-centric artificial intelligence. "
@@ -382,7 +392,9 @@ class _Builder:
                     name = wide_column(
                         model.name, label, metric, timepoint=timepoint, series=series_index
                     )
-                    column = self._metric_column(name, metric, f"{key} / {label}{where}")
+                    region = MODEL_REGIONS.get(model.name)
+                    what = f"{key} / {label}{where}" + (f", {region}" if region else "")
+                    column = self._metric_column(name, metric, what)
                     block.append((column, ("metric", model.name, label_id, metric)))
         return block
 
@@ -678,6 +690,7 @@ class _Builder:
                 Column("label_id", "integer", "", "label value in the labelmap"),
                 Column("label", "text", "", "label name, sanitised"),
                 Column("display_name", "text", "", "label name as shown in the app"),
+                Column("region", "text", "", "part of the scan the label is measured in"),
                 Column("color", "text", "", "overlay colour in the app"),
                 Column("model_sha256", "text", "", "SHA-256 of the model archive"),
             ],
@@ -691,6 +704,7 @@ class _Builder:
                         label_id,
                         label,
                         display_name(model.labels[label_id]),
+                        MODEL_REGIONS.get(model.name, WHOLE_FIELD),
                         model.colors.get(label_id),
                         model.zip_sha256,
                     ]
