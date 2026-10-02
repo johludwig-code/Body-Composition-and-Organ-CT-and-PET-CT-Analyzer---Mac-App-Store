@@ -8,6 +8,7 @@ for debugging behaves the same as one started by the app.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from bcoa_worker.protocol import Job
@@ -48,5 +49,9 @@ def runtime_environment(job: Job) -> dict[str, str]:
 def apply_runtime_environment(job: Job) -> None:
     for key, value in runtime_environment(job).items():
         os.environ[key] = value
+    # The environment variable only takes effect at interpreter start; a
+    # worker started without it (by hand, for debugging) must not write .pyc
+    # files into the signed bundle either.
+    sys.dont_write_bytecode = True
     for key in ("MPLCONFIGDIR", "TMPDIR", "TORCH_HOME", "XDG_CACHE_HOME"):
         Path(os.environ[key]).mkdir(parents=True, exist_ok=True)

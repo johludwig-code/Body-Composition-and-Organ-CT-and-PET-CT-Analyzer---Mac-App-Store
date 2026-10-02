@@ -20,14 +20,17 @@ code ([ADR 0012](docs/adr/0012-what-came-from-bocarta-moose.md)).
 
 | Milestone | State |
 |---|---|
-| M0 Spikes | **S1 desk part done** (MOOSE source read, offline traps found and handled in the adapter). S1 run, S2, S3, S4 need a Mac: [`docs/spikes/M0.md`](docs/spikes/M0.md) is the runbook. |
+| M0 Spikes | **S1 done on CPU**: MOOSE source read, five offline/sandbox traps handled in the adapter, then a real `clin_ct_organs` run through the worker with no network at all — weights from the bundle layout, no write into site-packages, output on the CT grid, slimmed weights (118 MB instead of 475 MB) bit-identical. The MPS run, S2, S3 and S4 need a Mac: [`docs/spikes/M0.md`](docs/spikes/M0.md) is the runbook. |
 | M1 Foundation | Repository layout, XcodeGen project, entitlements, privacy manifest, IPC v1 with schemas and fixtures, worker skeleton, database migrations, build/sign/verify scripts. **Written, not yet compiled** — this was produced in a Linux container without Xcode. |
 | M2–M8 | Not started. Metrics (section 10) and the export column naming (section 11) exist already because the plan asks for tests first in those places. |
 
-What has actually been run: the Python worker test suite (`make test-worker`)
-on Python 3.12 — protocol, fixtures, metrics, naming, pseudonymisation, the
-MOOSE adapter's offline guards and the bundle checks. The Swift code has
-**not** been compiled yet; the first `make app` on a Mac is part of spike S2.
+What has actually been run, in a Linux container: the worker suite (62 tests:
+protocol and fixtures, metrics, naming, pseudonymisation, the MOOSE adapter's
+offline guards, the database schema SQL), the script suite (6 tests for
+`verify_bundle.py`), `build_runtime.sh` against the Linux build of the same
+CPython, `license_report.py`, `fetch_models.py` and the S1 run above. The
+Swift code has **not** been compiled yet — there is no Swift toolchain in the
+container; the first `make test-swift` and `make app` on a Mac are part of S2.
 
 ## Layout
 

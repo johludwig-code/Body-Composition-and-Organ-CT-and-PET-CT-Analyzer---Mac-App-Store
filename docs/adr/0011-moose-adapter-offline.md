@@ -1,6 +1,6 @@
 # ADR 0011: How the adapter keeps MOOSE offline and out of the bundle's way
 
-- Status: accepted from reading the source; the S1 run on a Mac confirms it
+- Status: accepted. Confirmed by a real offline run on CPU (docs/spikes/M0.md); the MPS run on a Mac is outstanding
 - Date: 2026-10-02
 - Plan section: §4 "MOOSE-Adapter", spike S1
 

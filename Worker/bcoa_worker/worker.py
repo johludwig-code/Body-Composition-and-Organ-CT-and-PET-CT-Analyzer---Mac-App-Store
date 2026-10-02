@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import platform
+import shutil
 import signal
 import sys
 import threading
@@ -18,7 +19,7 @@ from types import FrameType
 
 from bcoa_worker import __version__
 from bcoa_worker.channel import ProtocolChannel
-from bcoa_worker.environment import apply_runtime_environment
+from bcoa_worker.environment import apply_runtime_environment, scratch_dir
 from bcoa_worker.errors import JobFailure
 from bcoa_worker.protocol import (
     Done,
@@ -110,6 +111,10 @@ def run_job(job: Job, channel: ProtocolChannel, handlers: dict[str, JobHandler])
         return 1
     finally:
         stop_heartbeat.set()
+        # Scratch holds MOOSE's intermediate images (about 300 MiB per model)
+        # and matplotlib/torch caches; on success, failure and SIGTERM alike
+        # nothing of it may stay in the project folder.
+        shutil.rmtree(scratch_dir(job), ignore_errors=True)
     channel.send(Done(job.job_id, "ok"))
     return 0
 

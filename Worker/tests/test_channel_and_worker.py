@@ -129,3 +129,16 @@ def test_spike_s2_end_to_end_through_the_real_entry_point(tmp_path: Path) -> Non
     assert result.payload["read_source"] == {"ok": True, "files": 1, "dicm_preamble": True}
     assert result.payload["write_project"] == {"ok": True}
     assert str(source) not in out.stdout
+
+
+def test_scratch_is_removed_after_the_job(tmp_path: Path) -> None:
+    from bcoa_worker.environment import scratch_dir
+
+    def leave_files(job: Job, channel: ProtocolChannel) -> None:
+        scratch_dir(job).mkdir(parents=True)
+        (scratch_dir(job) / "intermediate.nii.gz").write_bytes(b"x")
+        raise JobFailure("x", "y")
+
+    job = _job(tmp_path)
+    run_job(job, ProtocolChannel(io.StringIO()), {"selftest": leave_files})
+    assert not scratch_dir(job).exists()
