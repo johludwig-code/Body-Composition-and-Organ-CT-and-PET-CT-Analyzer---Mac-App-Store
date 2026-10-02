@@ -83,7 +83,7 @@ def test_pip_left_in_bundle_fails(app: Path, tmp_path: Path) -> None:
     "path",
     [
         "lib/python3.12/site-packages/blosc2/lib/libtcc.dylib",
-        "lib/python3.12/site-packages/cc3d/__init__.py",
+        "lib/python3.12/site-packages/cc3d/cc3d.cpython-312-darwin.so",
         "lib/python3.12/site-packages/setuptools/__init__.py",
     ],
 )
@@ -95,6 +95,13 @@ def test_parts_removed_by_adr_0014_fail_if_they_come_back(
     target.write_bytes(b"x")
     failures = verify_bundle.verify(app, _entitlements(tmp_path)).failures
     assert any(path.split("/")[3] in f for f in failures)
+
+
+def test_the_cc3d_stub_is_allowed(app: Path, tmp_path: Path) -> None:
+    stub = app / "Contents/Resources/python/lib/python3.12/site-packages/cc3d"
+    stub.mkdir(parents=True)
+    (stub / "__init__.py").write_text("# ADR 0014 stub\n")
+    assert verify_bundle.verify(app, _entitlements(tmp_path)).failures == []
 
 
 def test_the_shipped_entitlements_pass() -> None:

@@ -99,6 +99,18 @@ jobs:
           assert events[-1]["status"] == "ok"
           PY
 
+      - name: Worker logs (on failure)
+        if: failure()
+        # Printed rather than only uploaded: whoever reads a failed run may be
+        # able to open the job log but not download artifacts.
+        run: |
+          for f in build/s1/Study.bcoaproj/logs/*.log \
+                   ~/Library/Containers/de.ludwig.bcoanalyzer*/Data/Probe.bcoaproj/logs/*.log; do
+            [ -f "$f" ] || continue
+            echo "::group::$f"; tail -200 "$f"; echo "::endgroup::"
+          done
+          tail -50 build/*.jsonl 2>/dev/null || true
+
       - name: Reports
         if: always()
         run: |

@@ -95,8 +95,10 @@ fi
 #   expressions, and falls back to its interpreter when it is missing. A JIT
 #   needs an entitlement the app does not have, and compiling code at run
 #   time is exactly what App Review 2.5.2 looks for.
-# - connected-components-3d (LGPL-3.0) is imported only by acvl_utils'
-#   morphology helpers, which nnU-Net inference and MOOSE never call.
+# - connected-components-3d (LGPL-3.0) is imported at module level by
+#   acvl_utils' morphology helpers, which nnU-Net imports while looking up the
+#   trainer class but never calls during inference. A stub that fails on any
+#   use takes its place (Scripts/stubs/cc3d).
 # - python-gdcm brings its own OpenSSL; pydicom treats it as optional, and the
 #   app reads DICOM through dcm2niix.
 # - setuptools (vendoring LGPL code) is a build tool; torch lists it only for
@@ -105,12 +107,16 @@ log "removing package parts the worker never loads (ADR 0014)"
 rm -f "$SITE"/blosc2/lib/libtcc.*
 rm -rf "$SITE"/blosc2/share/miniexpr "$SITE"/blosc2-*.dist-info/licenses/miniexpr
 rm -rf "$SITE"/cc3d "$SITE"/connected_components_3d-*.dist-info
+# Only the source: a local __pycache__ may come from another Python.
+mkdir "$SITE/cc3d" && cp "$ROOT/Scripts/stubs/cc3d/__init__.py" "$SITE/cc3d/"
 rm -rf "$SITE"/_gdcm "$SITE"/gdcm.py "$SITE"/python_gdcm-*.dist-info
 rm -rf "$SITE"/setuptools "$SITE"/setuptools-*.dist-info "$SITE"/_distutils_hack \
   "$SITE"/distutils-precedence.pth
 "$PY" -I -c 'import importlib.util as u, sys
-gone = [m for m in ("cc3d", "gdcm", "setuptools") if u.find_spec(m)]
-sys.exit(f"still importable: {gone}" if gone else 0)'
+gone = [m for m in ("gdcm", "setuptools") if u.find_spec(m)]
+import cc3d
+stub = "ADR 0014" in (cc3d.__doc__ or "")
+sys.exit(f"still importable: {gone}" if gone else 0 if stub else "cc3d is not the stub")'
 
 # pip and the package installers' own metadata are not needed to run, and a
 # bundle that contains pip invites the question whether it installs code.

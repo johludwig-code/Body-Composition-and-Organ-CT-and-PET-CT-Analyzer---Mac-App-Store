@@ -11,7 +11,7 @@ Checks (plan §15):
   4. model files match the manifest's SHA-256
   5. the licence report exists and is not empty
   6. no installer left in the bundle (pip, ensurepip, setuptools), and none of
-     the parts ADR 0014 removes (TinyCC, cc3d, gdcm)
+     the parts ADR 0014 removes (TinyCC, the real cc3d, gdcm)
   7. a size report is written next to the app
 
 Plain Python 3 without third-party packages, so it runs with any interpreter.
@@ -173,7 +173,8 @@ INSTALLERS = (
 # these reappears, a lock update brought it back and build_runtime.sh missed it.
 REMOVED = (
     "lib/python3*/site-packages/blosc2/lib/libtcc*",
-    "lib/python3*/site-packages/cc3d",
+    "lib/python3*/site-packages/connected_components_3d-*",
+    "lib/python3*/site-packages/cc3d/*.so",
     "lib/python3*/site-packages/_gdcm",
 )
 
