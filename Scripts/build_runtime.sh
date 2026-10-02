@@ -134,6 +134,10 @@ find "$PY_DIR/bin" -mindepth 1 -name 'python3.[0-9]*-config' -delete
 log "stripping tests, headers and static libraries"
 find "$SITE" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} +
 rm -rf "$PY_DIR/include" "$PY_DIR/share"
+# torch's C++ headers (64 MB) are for building extensions, and protoc is a
+# compiler; neither runs in the app. torch_shm_manager stays: `import torch`
+# checks that it exists. verify_bundle.py fails on any other program.
+rm -rf "$SITE/torch/include" "$SITE"/torch/bin/protoc*
 find "$PY_DIR" -name '*.a' -delete
 find "$PY_DIR" -name '__pycache__' -type d -prune -exec rm -rf {} +
 

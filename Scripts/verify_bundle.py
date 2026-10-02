@@ -14,7 +14,10 @@ Checks (plan §15):
      python/bin but the interpreter, and none of the parts ADR 0014 removes
      (TinyCC, the real cc3d, gdcm)
   7. no image data (NIfTI, DICOM, …) among the models
-  8. a size report is written next to the app
+  8. no program in Resources but the three the worker needs, each sandboxed
+  9. every required-reason API the Mach-O files import is declared in
+     PrivacyInfo.xcprivacy (macOS only, needs nm)
+ 10. a size report is written next to the app
 
 Plain Python 3 without third-party packages, so it runs with any interpreter.
 """
@@ -29,6 +32,7 @@ import shutil
 import subprocess
 import sys
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 
 FORBIDDEN_STRING = b"itms-services"
@@ -43,6 +47,7 @@ MACHO_MAGIC = {
     bytes.fromhex("cafebabe"),
     bytes.fromhex("bebafeca"),
 }
+MH_EXECUTE = 2
 
 
 class Report:
@@ -78,6 +83,28 @@ def is_macho(path: Path) -> bool:
             return handle.read(4) in MACHO_MAGIC
     except OSError:
         return False
+
+
+def macho_filetype(path: Path) -> int | None:
+    """The Mach-O file type: 2 a program, 6 a dylib, 8 a loadable bundle."""
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(20)
+            magic = head[:4]
+            if magic == bytes.fromhex("cffaedfe"):
+                return int.from_bytes(head[12:16], "little")
+            if magic == bytes.fromhex("feedfacf"):
+                return int.from_bytes(head[12:16], "big")
+            if magic == bytes.fromhex("cafebabe") and len(head) == 20:
+                # Universal: every slice of one file is the same kind of thing,
+                # so the first decides.
+                handle.seek(int.from_bytes(head[16:20], "big"))
+                inner = handle.read(16)
+                order = "little" if inner[:4] == bytes.fromhex("cffaedfe") else "big"
+                return int.from_bytes(inner[12:16], order)
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 def sha256(path: Path) -> str:
@@ -127,7 +154,7 @@ def check_signatures(app: Path, files: list[Path], report: Report) -> int:
     if shutil.which("codesign") is None:
         report.note(f"codesign not available: {len(machos)} Mach-O files not checked")
         return len(machos)
-    helpers_dir = app / "Contents" / "Resources" / "python" / "bin"
+    main_dir = app / "Contents" / "MacOS"
     for path in machos:
         result = subprocess.run(
             ["codesign", "--verify", "--strict", str(path)], capture_output=True, check=False
@@ -143,7 +170,9 @@ def check_signatures(app: Path, files: list[Path], report: Report) -> int:
         ).stderr
         if "runtime" not in flags:
             report.fail(f"no hardened runtime: {path.relative_to(app)}")
-        if path.parent == helpers_dir or path.name == "dcm2niix":
+        # App Store Connect refuses any program in the bundle that is not
+        # sandboxed (ITMS-90296), whether or not the app ever starts it.
+        if path.parent != main_dir and macho_filetype(path) == MH_EXECUTE:
             keys = set(entitlements_of(path) or {})
             if keys != HELPER_ENTITLEMENTS:
                 report.fail(f"helper {path.name} has entitlements {sorted(keys)}")
@@ -214,6 +243,93 @@ def check_no_images_in_models(resources: Path, report: Report) -> None:
             report.fail(f"image data in the bundle: {path.relative_to(resources)}")
 
 
+# The programs the worker needs. Every other one is a question App Review may
+# ask and a binary to sign; torch_shm_manager stays because `import torch`
+# checks that it exists, although nothing here starts it.
+PROGRAMS = {"dcm2niix", "torch_shm_manager"}
+
+
+def check_programs(app: Path, files: list[Path], report: Report) -> None:
+    interpreter_dir = app / "Contents" / "Resources" / "python" / "bin"
+    for path in files:
+        if path.is_relative_to(app / "Contents" / "MacOS"):
+            continue
+        if macho_filetype(path) != MH_EXECUTE:
+            continue
+        if path.name in PROGRAMS or (
+            path.parent == interpreter_dir and INTERPRETER.fullmatch(path.name)
+        ):
+            continue
+        report.fail(f"program the worker does not need: {path.relative_to(app)}")
+
+
+# Apple's required-reason APIs as the symbols a Mach-O file imports
+# ("Describing use of required reason API"). An upload is refused
+# (ITMS-91053) for a category the privacy manifest leaves out; the bundled
+# interpreter alone imports the first three.
+REQUIRED_REASON_SYMBOLS = {
+    "NSPrivacyAccessedAPICategoryFileTimestamp": {
+        "stat",
+        "fstat",
+        "fstatat",
+        "lstat",
+        "getattrlist",
+        "fgetattrlist",
+        "getattrlistat",
+        "getattrlistbulk",
+    },
+    "NSPrivacyAccessedAPICategoryDiskSpace": {"statfs", "statvfs", "fstatfs", "fstatvfs"},
+    "NSPrivacyAccessedAPICategorySystemBootTime": {"mach_absolute_time"},
+    "NSPrivacyAccessedAPICategoryUserDefaults": {"OBJC_CLASS_$_NSUserDefaults"},
+}
+
+
+def imports_of(path: Path) -> set[str]:
+    out = subprocess.run(
+        ["nm", "-u", "-j", str(path)], capture_output=True, text=True, check=False
+    ).stdout
+    # `_stat$INODE64` on x86_64 is the same API as `_stat`.
+    return {
+        re.sub(r"\$INODE64$", "", line.strip()[1:])
+        for line in out.splitlines()
+        if line.startswith("_")
+    }
+
+
+def check_privacy_manifest(
+    app: Path, files: list[Path], report: Report, imports: Callable[[Path], set[str]] | None
+) -> None:
+    manifest = app / "Contents" / "Resources" / "PrivacyInfo.xcprivacy"
+    if not manifest.is_file():
+        report.fail("PrivacyInfo.xcprivacy missing")
+        return
+    declared = {
+        entry.get("NSPrivacyAccessedAPIType")
+        for entry in plistlib.loads(manifest.read_bytes()).get("NSPrivacyAccessedAPITypes", [])
+        if entry.get("NSPrivacyAccessedAPITypeReasons")
+    }
+    if imports is None:
+        report.note("nm not available: required-reason APIs not checked")
+        return
+    users: dict[str, list[Path]] = defaultdict(list)
+    for path in files:
+        if not is_macho(path):
+            continue
+        used = imports(path)
+        for category, symbols in REQUIRED_REASON_SYMBOLS.items():
+            if used & symbols:
+                users[category].append(path)
+    for category, paths in sorted(users.items()):
+        example = paths[0].relative_to(app)
+        if category in declared:
+            report.note(f"{category}: declared; imported by {len(paths)} files")
+        else:
+            report.fail(
+                f"{category} imported by {len(paths)} files ({example}) "
+                "but not declared in PrivacyInfo.xcprivacy"
+            )
+
+
 def write_size_report(app: Path, files: list[Path]) -> Path:
     sizes: dict[str, int] = defaultdict(int)
     resources = app / "Contents" / "Resources"
@@ -232,8 +348,14 @@ def write_size_report(app: Path, files: list[Path]) -> Path:
     return out
 
 
-def verify(app: Path, source_entitlements: Path | None) -> Report:
+def verify(
+    app: Path,
+    source_entitlements: Path | None,
+    imports: Callable[[Path], set[str]] | None = None,
+) -> Report:
     report = Report()
+    if imports is None and sys.platform == "darwin" and shutil.which("nm"):
+        imports = imports_of
     resources = app / "Contents" / "Resources"
     files = files_of(app)
     check_strings(app, files, report)
@@ -246,6 +368,8 @@ def verify(app: Path, source_entitlements: Path | None) -> Report:
         report.fail("licenses/THIRD_PARTY_NOTICES.md missing or empty")
     check_installers(resources, report)
     check_no_images_in_models(resources, report)
+    check_programs(app, files, report)
+    check_privacy_manifest(app, files, report, imports)
     report.note(f"size report: {write_size_report(app, files)}")
     return report
 

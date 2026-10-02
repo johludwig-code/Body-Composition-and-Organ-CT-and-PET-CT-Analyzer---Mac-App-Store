@@ -37,7 +37,27 @@ def app(tmp_path: Path) -> Path:
     (resources / "licenses").mkdir()
     (resources / "licenses" / "THIRD_PARTY_NOTICES.md").write_text("x" * 2000)
     (resources / "python" / "bin").mkdir(parents=True)
+    (resources / "PrivacyInfo.xcprivacy").write_bytes(SHIPPED_PRIVACY.read_bytes())
     return app
+
+
+ROOT = Path(__file__).resolve().parents[2]
+SHIPPED_PRIVACY = ROOT / "App" / "Resources" / "PrivacyInfo.xcprivacy"
+SITE = "Contents/Resources/python/lib/python3.12/site-packages"
+
+
+def _macho(path: Path, filetype: int, universal: bool = False) -> Path:
+    """A Mach-O header with nothing behind it: enough for the file type."""
+    thin = bytes.fromhex("cffaedfe") + bytes.fromhex("0c000001") + bytes(4)
+    thin += filetype.to_bytes(4, "little") + bytes(16)
+    if universal:
+        fat = bytes.fromhex("cafebabe") + (1).to_bytes(4, "big")
+        fat += bytes.fromhex("0100000c") + bytes(4) + (64).to_bytes(4, "big")
+        fat += len(thin).to_bytes(4, "big") + (14).to_bytes(4, "big")
+        thin = fat.ljust(64, b"\0") + thin
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(thin)
+    return path
 
 
 def _entitlements(tmp_path: Path, **extra: bool) -> Path:
@@ -140,3 +160,63 @@ def test_a_validation_prediction_in_the_models_fails(app: Path, tmp_path: Path) 
     target.write_bytes(b"\x1f\x8b")
     failures = verify_bundle.verify(app, _entitlements(tmp_path)).failures
     assert failures == [f"image data in the bundle: {folder}/0075.nii.gz"]
+
+
+def test_mach_o_file_types_are_read_from_thin_and_universal_files(tmp_path: Path) -> None:
+    assert verify_bundle.macho_filetype(_macho(tmp_path / "a", 2)) == verify_bundle.MH_EXECUTE
+    assert verify_bundle.macho_filetype(_macho(tmp_path / "b", 6)) == 6
+    assert verify_bundle.macho_filetype(_macho(tmp_path / "c", 2, universal=True)) == 2
+    (tmp_path / "d").write_text("#!/bin/sh\n")
+    assert verify_bundle.macho_filetype(tmp_path / "d") is None
+
+
+def test_a_program_the_worker_does_not_need_fails(app: Path, tmp_path: Path) -> None:
+    # torch's wheel carries protoc, a compiler nothing in the app runs.
+    _macho(app / SITE / "torch/bin/protoc", 2, universal=True)
+    failures = verify_bundle.verify(app, _entitlements(tmp_path)).failures
+    assert any("torch/bin/protoc" in f for f in failures)
+
+
+def test_the_programs_the_worker_needs_pass(app: Path, tmp_path: Path) -> None:
+    _macho(app / "Contents/Resources/python/bin/python3.12", 2)
+    _macho(app / SITE / "dcm2niix/dcm2niix", 2)
+    _macho(app / SITE / "torch/bin/torch_shm_manager", 2)
+    _macho(app / SITE / "torch/lib/libtorch_cpu.dylib", 6)
+    _macho(app / "Contents/MacOS/BCOAnalyzer", 2)
+    assert verify_bundle.verify(app, _entitlements(tmp_path)).failures == []
+
+
+def test_an_undeclared_required_reason_api_fails(app: Path, tmp_path: Path) -> None:
+    library = _macho(app / "Contents/Resources/python/lib/libpython3.12.dylib", 6)
+    manifest = app / "Contents/Resources/PrivacyInfo.xcprivacy"
+    content = plistlib.loads(manifest.read_bytes())
+    content["NSPrivacyAccessedAPITypes"] = [
+        e
+        for e in content["NSPrivacyAccessedAPITypes"]
+        if e["NSPrivacyAccessedAPIType"] != "NSPrivacyAccessedAPICategorySystemBootTime"
+    ]
+    manifest.write_bytes(plistlib.dumps(content))
+
+    def imports(path: Path) -> set[str]:
+        return {"mach_absolute_time", "open"} if path == library else set()
+
+    failures = verify_bundle.verify(app, _entitlements(tmp_path), imports).failures
+    assert any("SystemBootTime" in f and "libpython3.12.dylib" in f for f in failures)
+
+
+def test_the_shipped_manifest_declares_what_the_runtime_imports(app: Path, tmp_path: Path) -> None:
+    # The categories the macOS interpreter and packages import, found with a
+    # Mach-O reader over the arm64 wheels on 2 October 2026.
+    library = _macho(app / "Contents/Resources/python/lib/libpython3.12.dylib", 6)
+    imported = {"stat", "fstatat", "statfs", "statvfs", "mach_absolute_time"}
+
+    def imports(path: Path) -> set[str]:
+        return imported if path == library else set()
+
+    assert verify_bundle.verify(app, _entitlements(tmp_path), imports).failures == []
+
+
+def test_a_missing_privacy_manifest_fails(app: Path, tmp_path: Path) -> None:
+    (app / "Contents/Resources/PrivacyInfo.xcprivacy").unlink()
+    failures = verify_bundle.verify(app, _entitlements(tmp_path)).failures
+    assert "PrivacyInfo.xcprivacy missing" in failures
