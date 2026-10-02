@@ -42,7 +42,12 @@ creates a semaphore at import to find out whether it may use processes. It
 survives the refusal and stays serial, with a warning. The app and the worker
 now both set `JOBLIB_MULTIPROCESSING=0`, so it no longer tries, and a test
 holds the app's and the worker's environment to the same variables. The
-report step fails on any refused semaphore from now on.
+run after that showed the last one: tqdm, which draws nnU-Net's progress bars,
+asks for a multiprocessing lock when the first bar is made and goes on with
+its thread lock alone when refused. The adapter sets that outcome beforehand
+(`TqdmDefaultWriteLock.mp_lock = None`). A trace on Linux with every
+`SemLock` refused, through MOOSE and nnU-Net on the organ model, found no
+further request. The report step fails on any refused semaphore from now on.
 
 The export of a chunk now waits for the chunk's prediction and the next
 prediction waits for the export. What that costs in wall time is measured on

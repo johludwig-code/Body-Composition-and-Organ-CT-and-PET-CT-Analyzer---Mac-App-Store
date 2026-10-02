@@ -239,6 +239,14 @@ def harden(resources_dir: Path) -> None:
         raise AdapterError("nnU-Net's predictor no longer imports multiprocessing as a module")
     nnunet_predict.multiprocessing = _ExportInPlace()
 
+    # tqdm, for nnU-Net's progress bars, asks for a multiprocessing lock when
+    # the first bar is made. The sandbox refuses it and tqdm carries on with
+    # its thread lock alone; settling that beforehand spares the refusal,
+    # which the CI's sandbox report counts as a failure (ADR 0015).
+    from tqdm.std import TqdmDefaultWriteLock
+
+    TqdmDefaultWriteLock.mp_lock = None
+
 
 def verify_bundled_model(model: str, resources_dir: Path) -> Path:
     import moosez.models as moose_models

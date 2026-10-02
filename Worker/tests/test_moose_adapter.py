@@ -62,6 +62,24 @@ def fake_site(tmp_path: Path) -> Iterator[Path]:
         "Metadata-Version: 2.4\nName: moosez\nVersion: 3.2.2\n",
     )
     _write(site / "nnunetv2" / "__init__.py", "")
+    _write(site / "tqdm" / "__init__.py", "")
+    # tqdm 4.70.1's lock: a multiprocessing RLock on first use, None if refused.
+    _write(
+        site / "tqdm" / "std.py",
+        """
+        from multiprocessing import RLock
+        class TqdmDefaultWriteLock:
+            def __init__(self):
+                self.create_mp_lock()
+            @classmethod
+            def create_mp_lock(cls):
+                if not hasattr(cls, "mp_lock"):
+                    try:
+                        cls.mp_lock = RLock()
+                    except OSError:
+                        cls.mp_lock = None
+        """,
+    )
     _write(site / "nnunetv2" / "inference" / "__init__.py", "")
     # The shape of nnunetv2 2.8.1's predict_from_data_iterator: a spawn pool,
     # its workers' liveness, apply_async, get with a timeout.
@@ -87,7 +105,7 @@ def fake_site(tmp_path: Path) -> Iterator[Path]:
     yield site
     sys.path.remove(str(site))
     for name in list(sys.modules):
-        if name.split(".")[0] in ("moosez", "requests", "nnunetv2"):
+        if name.split(".")[0] in ("moosez", "requests", "nnunetv2", "tqdm"):
             del sys.modules[name]
 
 
@@ -144,17 +162,25 @@ def test_missing_trainer_is_a_modified_bundle(fake_site: Path, resources: Path) 
 
 
 @pytest.fixture
-def no_semaphores(monkeypatch: pytest.MonkeyPatch) -> None:
-    """What the App Sandbox does to `sem_open` for a name outside an app group."""
+def refused(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """What the App Sandbox does to `sem_open` for a name outside an app group.
+
+    The list collects every request, refused or not, so a test can hold that
+    none was made at all: the kernel logs each one as a violation.
+    """
     import multiprocessing.synchronize
 
+    requests: list[str] = []
+
     def refuse(*args: object, **kwargs: object) -> None:
+        requests.append("sem_open")
         raise PermissionError(1, "Operation not permitted")
 
     monkeypatch.setattr(multiprocessing.synchronize.SemLock, "__init__", refuse)
+    return requests
 
 
-def test_a_spawn_pool_needs_a_semaphore(fake_site: Path, no_semaphores: None) -> None:
+def test_a_spawn_pool_needs_a_semaphore(fake_site: Path, refused: list[str]) -> None:
     # The failure ADR 0015 is about, reproduced: without the adapter the
     # predictor cannot even open its pool.
     from nnunetv2.inference import predict_from_raw_data
@@ -164,12 +190,23 @@ def test_a_spawn_pool_needs_a_semaphore(fake_site: Path, no_semaphores: None) ->
 
 
 def test_the_export_runs_without_a_semaphore(
-    fake_site: Path, resources: Path, no_semaphores: None
+    fake_site: Path, resources: Path, refused: list[str]
 ) -> None:
     moose_adapter.harden(resources)
     from nnunetv2.inference import predict_from_raw_data
 
     assert predict_from_raw_data.predict_from_data_iterator([[1, 2], [3, 4], [5]]) == [3, 7, 5]
+    assert refused == []
+
+
+def test_progress_bars_do_not_ask_for_a_semaphore(
+    fake_site: Path, resources: Path, refused: list[str]
+) -> None:
+    moose_adapter.harden(resources)
+    from tqdm.std import TqdmDefaultWriteLock
+
+    TqdmDefaultWriteLock()
+    assert refused == []
 
 
 def test_the_predictor_keeps_the_rest_of_multiprocessing(fake_site: Path, resources: Path) -> None:
