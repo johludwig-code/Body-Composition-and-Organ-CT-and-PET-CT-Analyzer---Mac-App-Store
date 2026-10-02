@@ -110,8 +110,9 @@ models/manifest.json.
 - libgfortran, libquadmath, libgcc_s (in SciPy and NumPy): GPL-3.0 with the
   GCC Runtime Library Exception, which allows distributing them with
   software under any licence.
-- OpenSSL (in CPython's `_ssl`): Apache-2.0. The app has no network
-  entitlement and never opens a connection; see docs/OPEN_QUESTIONS.md #12.
+- OpenSSL (linked into CPython's libpython for `_ssl` and `_hashlib`):
+  Apache-2.0. The app has no network entitlement and never opens a
+  connection; see docs/OPEN_QUESTIONS.md #12.
 
 Removed from the packages before signing (ADR 0014): TinyCC from blosc2
 (LGPL-2.1), connected-components-3d (LGPL-3.0), python-gdcm, setuptools.

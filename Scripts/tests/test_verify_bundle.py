@@ -131,3 +131,12 @@ def test_the_shipped_entitlements_pass() -> None:
     assert report.failures == []
     helper = plistlib.loads((root / "App/Resources/Helper.entitlements").read_bytes())
     assert set(helper) == verify_bundle.HELPER_ENTITLEMENTS
+
+
+def test_a_validation_prediction_in_the_models_fails(app: Path, tmp_path: Path) -> None:
+    folder = "models/nnunet_trained_models/Dataset123_Organs/fold_all/validation"
+    target = app / "Contents/Resources" / folder / "0075.nii.gz"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"\x1f\x8b")
+    failures = verify_bundle.verify(app, _entitlements(tmp_path)).failures
+    assert failures == [f"image data in the bundle: {folder}/0075.nii.gz"]

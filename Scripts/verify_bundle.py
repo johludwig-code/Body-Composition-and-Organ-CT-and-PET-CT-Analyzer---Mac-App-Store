@@ -13,7 +13,8 @@ Checks (plan §15):
   6. no installer left in the bundle (pip, ensurepip, setuptools), nothing in
      python/bin but the interpreter, and none of the parts ADR 0014 removes
      (TinyCC, the real cc3d, gdcm)
-  7. a size report is written next to the app
+  7. no image data (NIfTI, DICOM, …) among the models
+  8. a size report is written next to the app
 
 Plain Python 3 without third-party packages, so it runs with any interpreter.
 """
@@ -200,6 +201,19 @@ def check_installers(resources: Path, report: Report) -> None:
             report.fail(f"removed by ADR 0014 but present: {hit.relative_to(resources)}")
 
 
+# The model archives carry nnU-Net's validation predictions, labelmaps of the
+# authors' validation patients (1 030 NIfTI files in clin_ct_body alone).
+# fetch_models.py prunes them; this makes sure no image ever ships.
+IMAGE_SUFFIXES = (".nii", ".nii.gz", ".dcm", ".mha", ".mhd", ".nrrd")
+
+
+def check_no_images_in_models(resources: Path, report: Report) -> None:
+    models = resources / "models"
+    for path in sorted(models.rglob("*")) if models.is_dir() else []:
+        if path.is_file() and path.name.lower().endswith(IMAGE_SUFFIXES):
+            report.fail(f"image data in the bundle: {path.relative_to(resources)}")
+
+
 def write_size_report(app: Path, files: list[Path]) -> Path:
     sizes: dict[str, int] = defaultdict(int)
     resources = app / "Contents" / "Resources"
@@ -231,6 +245,7 @@ def verify(app: Path, source_entitlements: Path | None) -> Report:
     if not notices.exists() or notices.stat().st_size < 1000:
         report.fail("licenses/THIRD_PARTY_NOTICES.md missing or empty")
     check_installers(resources, report)
+    check_no_images_in_models(resources, report)
     report.note(f"size report: {write_size_report(app, files)}")
     return report
 
