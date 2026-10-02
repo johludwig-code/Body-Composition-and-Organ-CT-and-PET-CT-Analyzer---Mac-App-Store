@@ -88,9 +88,9 @@ if [[ -f "$SITE/moosez/nnUNet_custom_trainer/MOOSE_custom_trainers.py" ]]; then
      "$SITE/nnunetv2/training/nnUNetTrainer/variants/MOOSE_custom_trainers.py"
 fi
 
-# ADR 0014: parts of the locked packages the worker never loads and that a
-# Store app should not carry. Each was checked against a real inference run
-# with the part blocked (labelmaps bit-identical):
+# ADR 0014: parts of the locked packages the worker never uses and that a
+# Store app should not carry. The ADR records the inference run on a real CT
+# with all of them blocked:
 # - blosc2 dlopens TinyCC (LGPL-2.1), a C compiler used as a JIT for array
 #   expressions, and falls back to its interpreter when it is missing. A JIT
 #   needs an entitlement the app does not have, and compiling code at run
@@ -122,6 +122,15 @@ sys.exit(f"still importable: {gone}" if gone else 0 if stub else "cc3d is not th
 # bundle that contains pip invites the question whether it installs code.
 rm -rf "$SITE"/pip "$SITE"/pip-*.dist-info "$PY_DIR"/bin/pip*
 
+# Console scripts: uv writes this machine's interpreter path into each
+# shebang, so in the bundle every one of them is dead, and several
+# (nnUNetv2_download_pretrained_model_by_url, imageio_download_bin, hf) are
+# download tools nobody should have to explain to App Review. The app starts
+# python3 itself, and the dcm2niix binary lives in site-packages/dcm2niix.
+find "$PY_DIR/bin" -mindepth 1 \( -type f -o -type l \) \
+  ! -name python ! -name python3 ! -name 'python3.[0-9]*' -delete
+find "$PY_DIR/bin" -mindepth 1 -name 'python3.[0-9]*-config' -delete
+
 log "stripping tests, headers and static libraries"
 find "$SITE" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} +
 rm -rf "$PY_DIR/include" "$PY_DIR/share"
@@ -139,6 +148,8 @@ log "precompiling"
 log "size report"
 {
   echo "runtime $(du -sh "$PY_DIR" | cut -f1)"
-  du -sh "$SITE"/* 2>/dev/null | sort -rh | head -25
+  # sed rather than head: head exits after 25 lines, sort then dies of
+  # SIGPIPE, and pipefail turned that into a failed build on the macOS runner.
+  du -sh "$SITE"/* 2>/dev/null | sort -rh | sed -n 1,25p
 } | tee "$OUT_DIR/size-report.txt"
 log "done: $PY"

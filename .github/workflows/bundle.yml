@@ -8,6 +8,15 @@ name: Bundle
 
 on:
   workflow_dispatch:
+    inputs:
+      real_case:
+        description: "Also segment the CT of one public FDG PET/CT (IDC, ACRIN-NSCLC-FDG-PET) in the sandbox"
+        type: boolean
+        default: false
+      real_models:
+        description: "Models for the real case, space-separated (each must be in Models/manifest.lock.json)"
+        type: string
+        default: "clin_ct_organs"
   pull_request:
     paths:
       - "Scripts/**"
@@ -24,6 +33,9 @@ jobs:
     timeout-minutes: 120
     env:
       APP: build/Build/Products/Release/BCOAnalyzer.app
+      # Through the environment, not interpolated into the scripts, so that
+      # whatever is typed into the dispatch form stays data.
+      REAL_MODELS: ${{ inputs.real_models }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -42,8 +54,8 @@ jobs:
       - name: Runtime (pinned CPython, locked packages, ADR 0014 trim)
         run: make runtime
 
-      - name: Model (clin_ct_organs, checked against the lock)
-        run: make models MODELS="clin_ct_organs"
+      - name: Models (clin_ct_organs and the real case's, checked against the lock)
+        run: make models MODELS="$(echo clin_ct_organs $REAL_MODELS | tr ' ' '\n' | sort -u | xargs)"
 
       - name: Licences (fails on GPL, LGPL or unknown)
         run: make licenses
@@ -98,6 +110,11 @@ jobs:
           assert result["inference"]["same_grid"]
           assert events[-1]["status"] == "ok"
           PY
+
+      - name: Real case (CT of a public FDG PET/CT, sandboxed worker, on request)
+        if: inputs.real_case
+        timeout-minutes: 75
+        run: Scripts/ci/real_case.sh "$APP" $REAL_MODELS
 
       - name: Worker logs (on failure)
         if: failure()

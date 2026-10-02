@@ -21,6 +21,7 @@ gives the exact files the bundle will contain, and audited with the new
 | connected-components-3d 4.1.0 | LGPL-3.0-or-later; pulled in by acvl-utils. Inference never calls it, but it is imported: nnU-Net finds the trainer class by importing its trainer modules, which import batchgeneratorsv2's training transforms, which import `acvl_utils.morphology`, which runs `import cc3d` at module level. The first macOS bundle run failed exactly there with `ModuleNotFoundError` | **replace by a stub** (`Scripts/stubs/cc3d`) that imports and fails loudly on any use |
 | python-gdcm 3.2.6 | carries its own OpenSSL (`libssl.3`, `libcrypto.3`); pulled in by dicom2nifti; pydicom imports it inside `try` | **remove** — the app reads DICOM with dcm2niix, and one OpenSSL fewer matters for export compliance (#12) |
 | setuptools 84 | build tool, vendors LGPL-3.0 code (autocommand); torch lists it for compiling C++ extensions only | **remove** |
+| console scripts in `python/bin` | about 90 wrappers (`moosez`, `nnUNetv2_*`, `gdcm*`, `hf`, …) whose shebang names the build machine's interpreter, so none can run from the bundle; several are download tools (`nnUNetv2_download_pretrained_model_by_url`, `imageio_download_bin`, `hf`, `tiny-agents`). The worker starts `python3` itself and calls none of them; dcm2niix's binary is in `site-packages/dcm2niix` | **remove** everything in `bin` but the interpreter |
 | torch 2.14.1 | `Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND … BSL-1.0 AND MIT` was reported as unknown | permissive; the report now understands `WITH` exceptions and BSL-1.0 |
 | batchgenerators, dynamic_network_architectures | the whole Apache-2.0 text pasted into `License`, reported as unknown | permissive; the report reads the first lines |
 | dcm2niix | metadata names no licence; `license.txt` is BSD-2-Clause (Chris Rorden) with public-domain, MIT and BSD parts | approved in `license_approvals.json` |
@@ -34,12 +35,14 @@ Nothing else in the 104 packages is GPL, AGPL or LGPL. The string
 
 ## Decision
 
-`build_runtime.sh` removes the four parts after installing the lock, puts
+`build_runtime.sh` removes the four parts and the console scripts after
+installing the lock, puts
 the cc3d stub in place of the real package, and fails if gdcm or setuptools
 is still importable or if `cc3d` is anything but the stub.
 `verify_bundle.py` fails if libtcc, the real cc3d (its compiled module or its
-dist-info), gdcm or setuptools reappears in a built app, so a lock update
-cannot bring them back silently. The lock itself is unchanged: the packages that need them still
+dist-info), gdcm or setuptools reappears in a built app, or if `python/bin`
+holds anything but the interpreter, so a lock update cannot bring them back
+silently. The lock itself is unchanged: the packages that need them still
 declare them, and the hashes still prove what was downloaded.
 
 ## Evidence that nothing breaks

@@ -10,8 +10,9 @@ Checks (plan §15):
   3. every Mach-O file is signed (macOS only; reported as skipped elsewhere)
   4. model files match the manifest's SHA-256
   5. the licence report exists and is not empty
-  6. no installer left in the bundle (pip, ensurepip, setuptools), and none of
-     the parts ADR 0014 removes (TinyCC, the real cc3d, gdcm)
+  6. no installer left in the bundle (pip, ensurepip, setuptools), nothing in
+     python/bin but the interpreter, and none of the parts ADR 0014 removes
+     (TinyCC, the real cc3d, gdcm)
   7. a size report is written next to the app
 
 Plain Python 3 without third-party packages, so it runs with any interpreter.
@@ -22,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -179,8 +181,17 @@ REMOVED = (
 )
 
 
+# The interpreter is the only program bin/ may hold. Console scripts carry the
+# build machine's path in their shebang, so none of them can run from the
+# bundle, and some are download tools (ADR 0014).
+INTERPRETER = re.compile(r"python(3(\.\d+)?)?")
+
+
 def check_installers(resources: Path, report: Report) -> None:
     python = resources / "python"
+    for hit in sorted((python / "bin").glob("*")):
+        if not INTERPRETER.fullmatch(hit.name):
+            report.fail(f"not the interpreter: {hit.relative_to(resources)}")
     for pattern in INSTALLERS:
         for hit in python.glob(pattern):
             report.fail(f"installer left in bundle: {hit.relative_to(resources)}")

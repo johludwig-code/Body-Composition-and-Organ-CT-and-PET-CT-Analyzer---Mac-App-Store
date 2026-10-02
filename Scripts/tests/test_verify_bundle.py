@@ -79,6 +79,24 @@ def test_pip_left_in_bundle_fails(app: Path, tmp_path: Path) -> None:
     assert any("installer" in f for f in failures)
 
 
+def test_the_interpreter_is_allowed_in_bin(app: Path, tmp_path: Path) -> None:
+    bin_dir = app / "Contents/Resources/python/bin"
+    for name in ("python", "python3", "python3.12"):
+        (bin_dir / name).write_bytes(b"\xcf\xfa\xed\xfe")
+    assert verify_bundle.verify(app, _entitlements(tmp_path)).failures == []
+
+
+@pytest.mark.parametrize(
+    "name", ["nnUNetv2_download_pretrained_model_by_url", "hf", "dcm2niix", "python3-config"]
+)
+def test_console_scripts_in_bin_fail(app: Path, tmp_path: Path, name: str) -> None:
+    # A real one from a macOS build: the shebang names the build machine.
+    script = "#!/Users/runner/work/x/build/runtime/python/bin/python3\n"
+    (app / "Contents/Resources/python/bin" / name).write_text(script)
+    failures = verify_bundle.verify(app, _entitlements(tmp_path)).failures
+    assert failures == [f"not the interpreter: python/bin/{name}"]
+
+
 @pytest.mark.parametrize(
     "path",
     [
