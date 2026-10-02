@@ -48,6 +48,11 @@ def runtime_environment(job: Job) -> dict[str, str]:
         # joblib survives with a warning and the kernel logs as a violation
         # (ADR 0015); this tells it to stay serial without trying.
         "JOBLIB_MULTIPROCESSING": "0",
+        # nnU-Net picks its number of data-augmentation processes, a training
+        # setting, by running `hostname` in a shell at import, which the worker
+        # refuses (ADR 0016). 12 is what it picks on any host it does not know,
+        # so the value is unchanged and only the lookup is skipped.
+        "nnUNet_n_proc_DA": "12",
     }
 
 

@@ -61,6 +61,7 @@ var environment: [String: String] = [
     "HF_HUB_OFFLINE": "1",
     "HF_HUB_DISABLE_TELEMETRY": "1",
     "JOBLIB_MULTIPROCESSING": "0",
+    "nnUNet_n_proc_DA": "12",
     "LANG": "en_US.UTF-8",
 ]
 let sandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"]

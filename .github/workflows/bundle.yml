@@ -141,6 +141,10 @@ jobs:
           echo "refusals, counted by process, operation and path:"
           sed -E 's/^.*Sandbox: //; s/\([0-9]+\)//' build/sandbox-denials.txt \
             | sort | uniq -c | sort -rn | head -80
+          # With their times as well: the real case's log marks when each run
+          # started, and a count alone cannot say which run a refusal came from.
+          echo "the first refusals as logged:"
+          head -40 build/sandbox-denials.txt | cut -c1-240
           # The operation, not any path that merely contains the word.
           if grep -Eq "deny\([0-9]+\) network-" build/sandbox-denials.txt; then
             echo "::error::the sandboxed worker tried to use the network"
@@ -163,7 +167,7 @@ jobs:
             [ -f "$f" ] || continue
             echo "::group::$f"; tail -200 "$f"; echo "::endgroup::"
           done
-          tail -50 build/*.jsonl 2>/dev/null || true
+          tail -50 build/*.jsonl build/real/*.jsonl 2>/dev/null || true
           # A process the kernel stops at launch leaves only these behind.
           for f in ~/Library/Logs/DiagnosticReports/*probe* ~/Library/Logs/DiagnosticReports/*python*; do
             [ -f "$f" ] || continue

@@ -47,6 +47,7 @@ public struct BundleLayout: Sendable {
             "HF_HUB_OFFLINE": "1",
             "HF_HUB_DISABLE_TELEMETRY": "1",
             "JOBLIB_MULTIPROCESSING": "0",
+            "nnUNet_n_proc_DA": "12",
             "LANG": "en_US.UTF-8",
         ]
         // The sandbox marker lets spike S2 report whether the worker really

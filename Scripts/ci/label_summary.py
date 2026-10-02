@@ -24,16 +24,33 @@ def events_of(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def read_ct(path: Path) -> tuple[sitk.Image, np.ndarray]:
+    image = sitk.ReadImage(str(path))
+    print(
+        json.dumps(
+            {
+                "ct": path.parent.name,
+                "size": image.GetSize(),
+                "spacing_mm": [round(s, 4) for s in image.GetSpacing()],
+            }
+        )
+    )
+    return image, sitk.GetArrayFromImage(image).astype(np.float64)
+
+
 def main(project: Path, work: Path) -> int:
-    ct_image = sitk.ReadImage(str(project / "work/s_ct/ct.nii.gz"))
-    ct = sitk.GetArrayFromImage(ct_image).astype(np.float64)
-    spacing = ct_image.GetSpacing()
-    print(json.dumps({"ct_size": ct_image.GetSize(), "spacing_mm": [round(s, 4) for s in spacing]}))
+    # A run tagged <model> covers the whole CT (series s_ct); one tagged
+    # <model>__crop_<device> covers the crop real_case.sh cut (s_crop).
+    images = {"s_ct": read_ct(project / "work/s_ct/ct.nii.gz")}
+    if (project / "work/s_crop/ct.nii.gz").exists():
+        images["s_crop"] = read_ct(project / "work/s_crop/ct.nii.gz")
     failed = []
     for events_file in sorted(work.glob("events_*.jsonl")):
         tag = events_file.stem.removeprefix("events_")
-        model, _, device_run = tag.partition("__")
-        series = "s_ct_cpu" if device_run == "cpu" else "s_ct"
+        model, _, run = tag.partition("__")
+        series = f"s_{run}" if run else "s_ct"
+        ct_image, ct = images["s_crop" if run.startswith("crop") else "s_ct"]
+        spacing = ct_image.GetSpacing()
         events = events_of(events_file)
         results = [e["payload"] for e in events if e.get("type") == "result"]
         status = events[-1].get("status") if events else "no output"
@@ -73,24 +90,24 @@ def main(project: Path, work: Path) -> int:
             print(f"  {name:<32} {m.voxel_count:>10} vox {m.volume_ml:>10.1f} ml {hu:>8} HU")
         if not same_grid:
             failed.append(tag)
-        if device_run == "cpu":
+        if run == "crop_cpu" and (project / f"work/s_crop_mps/labels/{model}.nii.gz").exists():
             compare_devices(project, model, labels)
     return 1 if failed else 0
 
 
 def compare_devices(project: Path, model: str, labels: dict[int, str]) -> None:
-    """Dice and volume difference per label between the default run and CPU.
+    """Dice and volume difference per label between MPS and CPU on the crop.
 
     Reported, not failed: below the plan's thresholds the plan asks for the
     cause to be documented, which a person does.
     """
     first = sitk.GetArrayFromImage(
-        sitk.ReadImage(str(project / f"work/s_ct/labels/{model}.nii.gz"))
+        sitk.ReadImage(str(project / f"work/s_crop_mps/labels/{model}.nii.gz"))
     )
     cpu = sitk.GetArrayFromImage(
-        sitk.ReadImage(str(project / f"work/s_ct_cpu/labels/{model}.nii.gz"))
+        sitk.ReadImage(str(project / f"work/s_crop_cpu/labels/{model}.nii.gz"))
     )
-    print(f"  {model}: default device against CPU")
+    print(f"  {model}: MPS against CPU on the crop")
     below = []
     for label_id, name in sorted(labels.items()):
         a, b = first == label_id, cpu == label_id

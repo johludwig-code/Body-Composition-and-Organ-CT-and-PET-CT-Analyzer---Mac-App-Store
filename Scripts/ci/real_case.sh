@@ -30,7 +30,7 @@ PROBE="$APP/Contents/MacOS/bcoa-probe"
 # is where it puts its project, and the only place it can read without a grant.
 PROJECT="$HOME/Library/Containers/de.ludwig.bcoanalyzer.probe/Data/Probe.bcoaproj"
 
-log() { printf '[real-case] %s\n' "$*"; }
+log() { printf '[real-case] %s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
 rm -rf "$WORK"; mkdir -p "$WORK"
 python3 -m venv "$WORK/idc"
@@ -44,31 +44,43 @@ log "$(find "$WORK/dicom" -name '*.dcm' | wc -l | tr -d ' ') DICOM files"
 D2N="$(ls "$ROOT"/build/runtime/python/lib/python3.*/site-packages/dcm2niix/dcm2niix)"
 mkdir -p "$WORK/nifti"
 "$D2N" -z y -b y -ba y -f ct -o "$WORK/nifti" "$WORK/dicom/CT" >/dev/null
-mkdir -p "$PROJECT/work/s_ct"
+mkdir -p "$PROJECT/work/s_ct" "$PROJECT/work/s_crop"
 cp "$WORK/nifti/ct.nii.gz" "$PROJECT/work/s_ct/ct.nii.gz"
+# The CPU half of the device comparison runs on 64 of the 356 slices, from
+# the kidneys to the lung bases (liver, spleen, pancreas, stomach, adrenals):
+# the whole CT on the runner's CPU did not finish within 68 minutes, where
+# MPS took under seven. Both devices see the same crop.
+"$PY" -I -c '
+import sys, SimpleITK as sitk
+ct = sitk.ReadImage(sys.argv[1])
+sitk.WriteImage(ct[:, :, 96:160], sys.argv[2], True)
+' "$PROJECT/work/s_ct/ct.nii.gz" "$PROJECT/work/s_crop/ct.nii.gz"
 
 # The worker's peak memory is what decides which Macs can run a model; the
 # probe's own rusage does not include its child, so it is sampled here.
+# Every five minutes it also says that the run is alive, because a step that
+# times out prints nothing of its own.
 sample_memory() {
-  local peak=0 now
+  local peak=0 now ticks=0
   while sleep 2; do
     now="$(ps -axo rss=,comm= | awk '/python3/ {s += $1} END {print s + 0}')"
     (( now > peak )) && peak=$now && echo "$peak" > "$WORK/peak_rss_kb"
+    (( ++ticks % 150 == 0 )) && log "still running after $((ticks * 2)) s, peak $((peak / 1024)) MB"
   done
 }
 
-# One run as the app would start it (device auto: MPS when present), and for
-# the first model one more on the CPU, which is spike S1's step 3: the same
-# CT on both devices, compared label by label (plan §16: Dice >= 0.99,
-# volume within 1 %).
+# One run per model on the whole CT as the app would start it (device auto:
+# MPS when present). For the first model, the crop once on MPS and once on
+# the CPU, which is spike S1's step 3: the same image on both devices,
+# compared label by label (plan §16: Dice >= 0.99, volume within 1 %).
 segment() {
-  local model="$1" device="$2" series="$3" tag="$4"
-  log "segmenting with $model on $device"
+  local model="$1" device="$2" series="$3" tag="$4" input="$5"
+  log "segmenting $input with $model on $device"
   echo 0 > "$WORK/peak_rss_kb"
   sample_memory & sampler=$!
   start=$(date +%s)
   status=0
-  "$PROBE" segment "{\"series_key\": \"$series\", \"input_nifti\": \"work/s_ct/ct.nii.gz\",
+  "$PROBE" segment "{\"series_key\": \"$series\", \"input_nifti\": \"$input\",
     \"models\": [\"$model\"], \"device\": \"$device\"}" > "$WORK/events_$tag.jsonl" || status=$?
   end=$(date +%s)
   kill "$sampler" 2>/dev/null || true
@@ -80,8 +92,9 @@ segment() {
 }
 
 for model in "${MODELS[@]}"; do
-  segment "$model" auto s_ct "$model"
+  segment "$model" auto s_ct "$model" work/s_ct/ct.nii.gz
 done
-segment "${MODELS[0]}" cpu s_ct_cpu "${MODELS[0]}__cpu"
+segment "${MODELS[0]}" mps s_crop_mps "${MODELS[0]}__crop_mps" work/s_crop/ct.nii.gz
+segment "${MODELS[0]}" cpu s_crop_cpu "${MODELS[0]}__crop_cpu" work/s_crop/ct.nii.gz
 
 "$PY" -I "$ROOT/Scripts/ci/label_summary.py" "$PROJECT" "$WORK"
