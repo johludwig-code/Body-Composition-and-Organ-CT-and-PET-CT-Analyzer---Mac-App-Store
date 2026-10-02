@@ -22,7 +22,7 @@ code ([ADR 0012](docs/adr/0012-what-came-from-bocarta-moose.md)).
 |---|---|
 | M0 Spikes | **S1 done on CPU**: MOOSE source read, five offline/sandbox traps handled in the adapter, then a real `clin_ct_organs` run through the worker with no network at all — weights from the bundle layout, no write into site-packages, output on the CT grid, slimmed weights (118 MB instead of 475 MB) bit-identical. The MPS run, S2, S3 and S4 need a Mac: [`docs/spikes/M0.md`](docs/spikes/M0.md) is the runbook. |
 | M1 Foundation | Repository layout, XcodeGen project, entitlements, privacy manifest, IPC v1 with schemas and fixtures, worker skeleton, database migrations, build/sign/verify scripts. **Written, not yet compiled** — this was produced in a Linux container without Xcode. |
-| M2–M8 | Not started. Metrics (section 10) and the export column naming (section 11) exist already because the plan asks for tests first in those places. |
+| M2–M8 | Not started, apart from what the plan asks to have tests first: the metrics (section 10) and the export engine (section 11, M5): XLSX and both CSV variants, long and wide, every row level and timepoint rule, all seven sheets, methods text and masks, held by golden files ([ADR 0013](docs/adr/0013-export-reads-the-project-database.md)). The export dialog in the app is not built yet. |
 
 What has actually been run, in a Linux container: the worker suite (62 tests:
 protocol and fixtures, metrics, naming, pseudonymisation, the MOOSE adapter's

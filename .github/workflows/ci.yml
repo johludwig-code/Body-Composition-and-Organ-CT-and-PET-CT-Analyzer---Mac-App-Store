@@ -14,6 +14,7 @@ jobs:
         run: |
           cd Worker
           uv run --no-project --python 3.12 --with pytest --with jsonschema --with numpy --with ruff \
+            --with xlsxwriter --with openpyxl --with pandas \
             bash -c 'ruff check . && ruff format --check . && pytest -q'
           cd ..
           uv run --no-project --python 3.12 --with pytest --with ruff \

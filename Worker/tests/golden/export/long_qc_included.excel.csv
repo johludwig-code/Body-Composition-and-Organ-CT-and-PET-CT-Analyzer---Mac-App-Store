@@ -1,0 +1,22 @@
+﻿pseudonym;timepoint;day;series;series_description;model;label_id;label;voxel_count;volume_ml;hu_mean;hu_sd;hu_median;hu_p05;hu_p95;hu_min;hu_max;touches_border;flags;qc_status;device;run_id
+P0001;1;0;1;Abdomen 1.0 Br40;organs;1;liver;1010;7,890625;42,25;12,5;42,0;20,5;60,75;-100,0;250,0;FALSE;;accepted;mps;R20261002T120000
+P0001;1;0;1;Abdomen 1.0 Br40;organs;2;spleen;1020;7,96875;43,25;12,5;43,0;20,5;60,75;-100,0;250,0;FALSE;;accepted;mps;R20261002T120000
+P0001;1;0;1;Abdomen 1.0 Br40;organs;3;kidney_left;1030;8,046875;44,25;12,5;44,0;20,5;60,75;-100,0;250,0;FALSE;;accepted;mps;R20261002T120000
+P0001;1;0;1;Abdomen 1.0 Br40;body_composition;1;skeletal_muscle;2010;15,703125;43,25;12,5;43,0;20,5;60,75;-100,0;250,0;FALSE;;accepted;mps;R20261002T120000
+P0001;1;0;1;Abdomen 1.0 Br40;body_composition;2;subcutaneous_fat;2020;15,78125;44,25;12,5;44,0;20,5;60,75;-100,0;250,0;FALSE;;accepted;mps;R20261002T120000
+P0001;1;0;1;Abdomen 1.0 Br40;body_composition;3;visceral_fat;2030;15,859375;45,25;12,5;45,0;20,5;60,75;-100,0;250,0;FALSE;;accepted;mps;R20261002T120000
+P0001;2;420;1;Abdomen 1.0 Br40;organs;1;liver;3010;23,515625;44,25;12,5;44,0;20,5;60,75;-100,0;250,0;FALSE;;unreviewed;mps;R20261002T120000
+P0001;2;420;1;Abdomen 1.0 Br40;organs;2;spleen;3020;23,59375;45,25;12,5;45,0;20,5;60,75;-100,0;250,0;FALSE;;unreviewed;mps;R20261002T120000
+P0001;2;420;1;Abdomen 1.0 Br40;organs;3;kidney_left;3030;23,671875;46,25;12,5;46,0;20,5;60,75;-100,0;250,0;FALSE;;unreviewed;mps;R20261002T120000
+P0001;2;420;1;Abdomen 1.0 Br40;body_composition;1;skeletal_muscle;4010;31,328125;45,25;12,5;45,0;20,5;60,75;-100,0;250,0;FALSE;;unreviewed;mps;R20261002T120000
+P0001;2;420;1;Abdomen 1.0 Br40;body_composition;2;subcutaneous_fat;4020;31,40625;46,25;12,5;46,0;20,5;60,75;-100,0;250,0;FALSE;;unreviewed;mps;R20261002T120000
+P0001;2;420;1;Abdomen 1.0 Br40;body_composition;3;visceral_fat;4030;31,484375;47,25;12,5;47,0;20,5;60,75;-100,0;250,0;FALSE;;unreviewed;mps;R20261002T120000
+P0002;1;0;1;Portal venous;organs;1;liver;7010;54,765625;48,25;12,5;48,0;20,5;60,75;-100,0;250,0;FALSE;;rejected;mps;R20261002T120000
+P0002;1;0;1;Portal venous;organs;2;spleen;7020;54,84375;49,25;12,5;49,0;20,5;60,75;-100,0;250,0;FALSE;;rejected;mps;R20261002T120000
+P0002;1;0;1;Portal venous;organs;3;kidney_left;7030;54,921875;50,25;12,5;50,0;20,5;60,75;-100,0;250,0;FALSE;;rejected;mps;R20261002T120000
+P0002;1;0;1;Portal venous;body_composition;1;skeletal_muscle;8010;62,578125;49,25;12,5;49,0;20,5;60,75;-100,0;250,0;FALSE;;rejected;mps;R20261002T120000
+P0002;1;0;1;Portal venous;body_composition;2;subcutaneous_fat;8020;62,65625;50,25;12,5;50,0;20,5;60,75;-100,0;250,0;FALSE;;rejected;mps;R20261002T120000
+P0002;1;0;1;Portal venous;body_composition;3;visceral_fat;8030;62,734375;51,25;12,5;51,0;20,5;60,75;-100,0;250,0;FALSE;;rejected;mps;R20261002T120000
+P0004;1;;1;"'=HYPERLINK(""http://example.invalid"")";organs;1;liver;9010;70,390625;50,25;12,5;50,0;20,5;60,75;-100,0;250,0;TRUE;truncated;unreviewed;mps;R20261002T120000
+P0004;1;;1;"'=HYPERLINK(""http://example.invalid"")";organs;2;spleen;9020;70,46875;51,25;12,5;51,0;20,5;60,75;-100,0;250,0;FALSE;;label_excluded;mps;R20261002T120000
+P0004;1;;1;"'=HYPERLINK(""http://example.invalid"")";organs;3;kidney_left;9030;70,546875;52,25;12,5;52,0;20,5;60,75;-100,0;250,0;FALSE;;unreviewed;mps;R20261002T120000

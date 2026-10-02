@@ -43,9 +43,10 @@ JobHandler = Callable[[Job, ProtocolChannel], None]
 def _handlers() -> dict[str, JobHandler]:
     # Imported lazily: a selftest must not pay for importing torch twice, and
     # an index job must not import torch at all.
-    from bcoa_worker.jobs import segment, selftest, spike_s2
+    from bcoa_worker.jobs import export, segment, selftest, spike_s2
 
     return {
+        "export": export.run,
         "selftest": selftest.run,
         "spike_s2": spike_s2.run,
         "segment": segment.run,

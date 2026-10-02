@@ -21,3 +21,15 @@ platform.
 
 No table has a column for names, birth dates or addresses (plan §6). A test in
 each suite fails if one appears.
+
+## JSON columns of `runs`
+
+Defined in [ADR 0013](adr/0013-export-reads-the-project-database.md), because
+the export reads them:
+
+- `models_json`: list in run order, which is the column order of the export:
+  `[{"name": "clin_ct_organs", "zip_sha256": "…", "labels": {"1": "liver"},
+  "colors": {"1": "#d4a373"}}]` (`colors` optional).
+- `versions_json`: flat object of version strings: `app`, `moosez`,
+  `nnunetv2`, `torch`, `python`, `macos`, `chip`, …
+- `settings_json`: any object; copied into the export's `provenance` sheet.

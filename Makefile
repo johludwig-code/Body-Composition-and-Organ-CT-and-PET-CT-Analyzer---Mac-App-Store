@@ -16,7 +16,8 @@ all: runtime models licenses app verify
 test: test-worker test-swift
 
 test-worker:
-	cd Worker && uv run --no-project --with pytest --with jsonschema --with numpy --with ruff --python 3.12 \
+	cd Worker && uv run --no-project --with pytest --with jsonschema --with numpy --with ruff \
+	  --with xlsxwriter --with openpyxl --with pandas --python 3.12 \
 	  bash -c 'ruff check . && ruff format --check . && pytest -q'
 	uv run --no-project --with pytest --with ruff --python 3.12 \
 	  bash -c 'ruff check --config Worker/pyproject.toml Scripts && pytest -q Scripts/tests'
