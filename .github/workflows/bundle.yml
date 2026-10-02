@@ -128,6 +128,25 @@ jobs:
         timeout-minutes: 75
         run: Scripts/ci/real_case.sh "$APP" $REAL_MODELS
 
+      - name: Sandbox report (what the worker tried and was refused)
+        if: always()
+        # Plan §16, "Sandbox and offline": no connection, no write outside the
+        # allowed places. The worker has no network entitlement, so an attempt
+        # shows up here as a refusal rather than as traffic. S2 writes into the
+        # ungranted source folder on purpose; that refusal is expected.
+        run: |
+          log show --last 3h --style compact --predicate \
+            'eventMessage CONTAINS "Sandbox: python3" OR eventMessage CONTAINS "Sandbox: bcoa-probe"' \
+            2>/dev/null | grep "Sandbox:" > build/sandbox-denials.txt || true
+          echo "refusals, counted by process, operation and path:"
+          sed -E 's/^.*Sandbox: //; s/\([0-9]+\)//' build/sandbox-denials.txt \
+            | sort | uniq -c | sort -rn | head -80
+          # The operation, not any path that merely contains the word.
+          if grep -Eq "deny\([0-9]+\) network-" build/sandbox-denials.txt; then
+            echo "::error::the sandboxed worker tried to use the network"
+            exit 1
+          fi
+
       - name: Worker logs (on failure)
         if: failure()
         # Printed rather than only uploaded: whoever reads a failed run may be
@@ -164,4 +183,5 @@ jobs:
             build/Build/Products/Release/size-report.txt
             build/licenses/THIRD_PARTY_NOTICES.md
             build/*.jsonl
+            build/sandbox-denials.txt
             build/s1/Study.bcoaproj/logs
