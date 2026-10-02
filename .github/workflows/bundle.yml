@@ -32,7 +32,10 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 120
     env:
-      APP: build/Build/Products/Release/BCOAnalyzer.app
+      # Absolute: a sandboxed process runs with the container as its working
+      # directory, so a relative path to the probe resolves inside the
+      # container (the second run failed on exactly that).
+      APP: ${{ github.workspace }}/build/Build/Products/Release/BCOAnalyzer.app
       # Through the environment, not interpolated into the scripts, so that
       # whatever is typed into the dispatch form stays data.
       REAL_MODELS: ${{ inputs.real_models }}

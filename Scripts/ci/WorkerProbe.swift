@@ -16,6 +16,13 @@ let arguments = CommandLine.arguments
 let kind = arguments.count > 1 ? arguments[1] : "selftest"
 let payloadJSON = arguments.count > 2 ? arguments[2] : "{}"
 
+// The sandbox starts the process with its container as the working directory,
+// so a relative argv[0] would point into the container, not at the bundle.
+guard arguments[0].hasPrefix("/") else {
+    FileHandle.standardError.write(Data(
+        "[probe] start bcoa-probe by its absolute path; in the sandbox the working directory is the container\n".utf8))
+    exit(2)
+}
 let executable = URL(fileURLWithPath: arguments[0]).resolvingSymlinksInPath()
 let resources = executable.deletingLastPathComponent()
     .deletingLastPathComponent().appendingPathComponent("Resources")

@@ -31,18 +31,20 @@ def main(project: Path, work: Path) -> int:
     print(json.dumps({"ct_size": ct_image.GetSize(), "spacing_mm": [round(s, 4) for s in spacing]}))
     failed = []
     for events_file in sorted(work.glob("events_*.jsonl")):
-        model = events_file.stem.removeprefix("events_")
+        tag = events_file.stem.removeprefix("events_")
+        model, _, device_run = tag.partition("__")
+        series = "s_ct_cpu" if device_run == "cpu" else "s_ct"
         events = events_of(events_file)
         results = [e["payload"] for e in events if e.get("type") == "result"]
         status = events[-1].get("status") if events else "no output"
         if status != "ok" or not results:
             errors = [e["payload"] for e in events if e.get("type") == "error"]
-            print(json.dumps({"model": model, "status": status, "errors": errors}))
-            failed.append(model)
+            print(json.dumps({"run": tag, "status": status, "errors": errors}))
+            failed.append(tag)
             continue
         result = results[-1]
         labels = {int(k): v for k, v in result["labels"].items()}
-        label_image = sitk.ReadImage(str(project / f"work/s_ct/labels/{model}.nii.gz"))
+        label_image = sitk.ReadImage(str(project / f"work/{series}/labels/{model}.nii.gz"))
         same_grid = (
             label_image.GetSize() == ct_image.GetSize()
             and np.allclose(label_image.GetSpacing(), spacing)
@@ -55,7 +57,7 @@ def main(project: Path, work: Path) -> int:
         print(
             json.dumps(
                 {
-                    "model": model,
+                    "run": tag,
                     "status": status,
                     "device": result["device"],
                     "device_fallback": result["device_fallback"],
@@ -70,8 +72,35 @@ def main(project: Path, work: Path) -> int:
             name = labels[m.label_id]
             print(f"  {name:<32} {m.voxel_count:>10} vox {m.volume_ml:>10.1f} ml {hu:>8} HU")
         if not same_grid:
-            failed.append(model)
+            failed.append(tag)
+        if device_run == "cpu":
+            compare_devices(project, model, labels)
     return 1 if failed else 0
+
+
+def compare_devices(project: Path, model: str, labels: dict[int, str]) -> None:
+    """Dice and volume difference per label between the default run and CPU.
+
+    Reported, not failed: below the plan's thresholds the plan asks for the
+    cause to be documented, which a person does.
+    """
+    first = sitk.GetArrayFromImage(
+        sitk.ReadImage(str(project / f"work/s_ct/labels/{model}.nii.gz"))
+    )
+    cpu = sitk.GetArrayFromImage(
+        sitk.ReadImage(str(project / f"work/s_ct_cpu/labels/{model}.nii.gz"))
+    )
+    print(f"  {model}: default device against CPU")
+    below = []
+    for label_id, name in sorted(labels.items()):
+        a, b = first == label_id, cpu == label_id
+        total = int(a.sum()) + int(b.sum())
+        dice = 1.0 if total == 0 else 2 * int((a & b).sum()) / total
+        volume = 0.0 if not b.sum() else 100 * (int(a.sum()) - int(b.sum())) / int(b.sum())
+        print(f"  {name:<32} Dice {dice:.4f}  volume {volume:+.2f} %")
+        if dice < 0.99 or abs(volume) > 1:
+            below.append(f"{model}/{name}")
+    print(json.dumps({"identical": bool((first == cpu).all()), "below_plan": below}))
 
 
 if __name__ == "__main__":

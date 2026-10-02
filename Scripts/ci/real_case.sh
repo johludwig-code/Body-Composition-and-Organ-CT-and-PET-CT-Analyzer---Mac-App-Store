@@ -18,7 +18,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-APP="$1"; shift
+# Absolute, because the sandboxed probe sees the container as its working
+# directory and could not find the bundle from a relative path.
+APP="$(cd "$1" && pwd)"; shift
 MODELS=("${@:-clin_ct_organs}")
 WORK="$ROOT/build/real"
 CT_SERIES="1.3.6.1.4.1.14519.5.2.1.7009.2403.292064430427945429126463039560"
@@ -55,21 +57,31 @@ sample_memory() {
   done
 }
 
-for model in "${MODELS[@]}"; do
-  log "segmenting with $model"
+# One run as the app would start it (device auto: MPS when present), and for
+# the first model one more on the CPU, which is spike S1's step 3: the same
+# CT on both devices, compared label by label (plan §16: Dice >= 0.99,
+# volume within 1 %).
+segment() {
+  local model="$1" device="$2" series="$3" tag="$4"
+  log "segmenting with $model on $device"
   echo 0 > "$WORK/peak_rss_kb"
   sample_memory & sampler=$!
   start=$(date +%s)
   status=0
-  "$PROBE" segment "{\"series_key\": \"s_ct\", \"input_nifti\": \"work/s_ct/ct.nii.gz\",
-    \"models\": [\"$model\"]}" > "$WORK/events_$model.jsonl" || status=$?
+  "$PROBE" segment "{\"series_key\": \"$series\", \"input_nifti\": \"work/s_ct/ct.nii.gz\",
+    \"models\": [\"$model\"], \"device\": \"$device\"}" > "$WORK/events_$tag.jsonl" || status=$?
   end=$(date +%s)
   kill "$sampler" 2>/dev/null || true
   wait "$sampler" 2>/dev/null || true
-  printf '{"model": "%s", "wall_s": %d, "peak_rss_gb": %.2f, "exit": %d}\n' \
-    "$model" $((end - start)) "$(echo "$(cat "$WORK/peak_rss_kb") / 1048576" | bc -l)" \
+  printf '{"run": "%s", "wall_s": %d, "peak_rss_gb": %.2f, "exit": %d}\n' \
+    "$tag" $((end - start)) "$(echo "$(cat "$WORK/peak_rss_kb") / 1048576" | bc -l)" \
     "$status" | tee -a "$WORK/timings.jsonl"
   sysctl vm.swapusage
+}
+
+for model in "${MODELS[@]}"; do
+  segment "$model" auto s_ct "$model"
 done
+segment "${MODELS[0]}" cpu s_ct_cpu "${MODELS[0]}__cpu"
 
 "$PY" -I "$ROOT/Scripts/ci/label_summary.py" "$PROJECT" "$WORK"
