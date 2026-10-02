@@ -73,7 +73,13 @@ jobs:
 
       - name: Sandboxed probe in the app bundle
         run: |
-          swiftc -O Scripts/ci/WorkerProbe.swift -o "$APP/Contents/MacOS/bcoa-probe"
+          # A sandboxed tool started on its own, not by a sandboxed parent,
+          # needs its own bundle identifier in an embedded Info.plist section
+          # (Apple: "Embedding a command-line tool in a sandboxed app"). The
+          # first run, without one, died before printing a single line.
+          swiftc -O Scripts/ci/WorkerProbe.swift -o "$APP/Contents/MacOS/bcoa-probe" \
+            -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist \
+            -Xlinker Scripts/ci/probe-Info.plist
           codesign --force --sign - --options runtime -i de.ludwig.bcoanalyzer.probe \
             --entitlements App/Resources/BCOAnalyzer.entitlements "$APP/Contents/MacOS/bcoa-probe"
           # The probe changed the bundle; seal it again around the signed tree.
@@ -83,8 +89,11 @@ jobs:
 
       - name: S2 in the sandbox (worker inherits; a folder nobody granted stays closed)
         run: |
+          status=0
           "$APP/Contents/MacOS/bcoa-probe" spike_s2 \
-            "{\"source_dir\": \"$GITHUB_WORKSPACE/Protocol/fixtures\"}" | tee build/s2.jsonl
+            "{\"source_dir\": \"$GITHUB_WORKSPACE/Protocol/fixtures\"}" > build/s2.jsonl || status=$?
+          cat build/s2.jsonl
+          echo "probe exit status: $status"
           python3 - build/s2.jsonl <<'PY'
           import json, sys
           events = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
@@ -127,6 +136,14 @@ jobs:
             echo "::group::$f"; tail -200 "$f"; echo "::endgroup::"
           done
           tail -50 build/*.jsonl 2>/dev/null || true
+          # A process the kernel stops at launch leaves only these behind.
+          for f in ~/Library/Logs/DiagnosticReports/*probe* ~/Library/Logs/DiagnosticReports/*python*; do
+            [ -f "$f" ] || continue
+            echo "::group::$f"; head -80 "$f"; echo "::endgroup::"
+          done
+          log show --last 10m --style compact --predicate \
+            'process == "bcoa-probe" OR process BEGINSWITH "python3" OR sender == "Sandbox" OR subsystem == "com.apple.sandbox" OR (process == "kernel" AND eventMessage CONTAINS[c] "sandbox")' \
+            2>/dev/null | tail -100 || true
 
       - name: Reports
         if: always()
