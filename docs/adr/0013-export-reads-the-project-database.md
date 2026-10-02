@@ -46,7 +46,14 @@ app already has them in `project.sqlite`.
    Excel from stripping the leading zeros of a PatientID; that is what the
    workbook's text cells are for, and the default identifier is the
    pseudonym, which has no such problem.
-6. **Not in this step.** The reproducibility package (M6) is refused with a
+6. **Methods text.** Plan §11's sentence "Results underwent visual quality
+   control; n series were excluded." is used only when every segmented series
+   in the export has a QC decision (on the series, a model or a label). With
+   some reviewed it says "k of N series underwent visual quality control";
+   with none, "No visual quality control was recorded for these results."
+   The paragraph is written to be pasted into a paper, and the first export
+   of a real case claimed a review that never happened.
+7. **Not in this step.** The reproducibility package (M6) is refused with a
    clear error rather than silently left out. Hashed study UIDs are not
    exported yet, because the per-project key has no column; rows are traced
    through pseudonym, timepoint and run ID instead.

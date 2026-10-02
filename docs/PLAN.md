@@ -422,6 +422,8 @@ P0002,2,M,…,0,…,ok,…,…
 
 „Segmentations were generated with MOOSE v\<version> (Shiyam Sundar et al., J Nucl Med 2022), based on nnU-Net (Isensee et al., Nat Methods 2021), using \<AppName> v\<version> on \<chip> (PyTorch \<device>). Results underwent visual quality control; \<n> series were excluded.“
 
+Der QC-Satz steht nur so da, wenn jede segmentierte Serie eine QC-Entscheidung hat; sonst heißt er „\<k> of \<N> series underwent visual quality control; …“ oder „No visual quality control was recorded for these results.“ (ADR 0013).
+
 ## 12. Qualitätskontrolle, Provenienz und Reproduzierbarkeit
 
 Jede Serie erhält einen QC-Status, einzelne fehlerhafte Labels lassen sich ausschließen, und jede exportierte Zahl ist auf Lauf, Versionen und Gerät zurückführbar.

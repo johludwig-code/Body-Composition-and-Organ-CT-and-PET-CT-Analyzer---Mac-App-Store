@@ -160,6 +160,10 @@ class _QC:
         entry = self.latest.get((series_key, model, label_id))
         return entry is not None and entry.status == "label_excluded"
 
+    def reviewed(self, series_key: str) -> bool:
+        # A decision on one label is a look at the series as well.
+        return any(key[0] == series_key for key in self.latest)
+
 
 class _Builder:
     def __init__(self, data: ProjectData, options: ExportOptions) -> None:
@@ -737,12 +741,28 @@ class _Builder:
     def methods_text(self, excluded: int) -> str:
         versions = self.data.run.versions
         chip = versions.get("chip", "unknown hardware")
+        segmented = {
+            slot.series.series_key
+            for slot in self.slots
+            if any((slot.series.series_key, m.name) in self.results for m in self.models)
+        }
+        reviewed = sum(1 for key in segmented if self.qc.reviewed(key))
+        # The paragraph is pasted into papers, so it claims a review only as
+        # far as one was recorded; plan §11's sentence is the complete case.
+        if segmented and reviewed == len(segmented):
+            qc = f"Results underwent visual quality control; {excluded} series were excluded."
+        elif reviewed:
+            qc = (
+                f"{reviewed} of {len(segmented)} series underwent visual quality control; "
+                f"{excluded} series were excluded."
+            )
+        else:
+            qc = "No visual quality control was recorded for these results."
         return (
             f"Segmentations were generated with MOOSE v{versions.get('moosez', 'unknown')} "
             "(Shiyam Sundar et al., J Nucl Med 2022), based on nnU-Net (Isensee et al., "
             f"Nat Methods 2021), using {APP_NAME} v{versions.get('app', __version__)} on "
-            f"{chip} (PyTorch {self.data.run.device}). Results underwent visual quality "
-            f"control; {excluded} series were excluded."
+            f"{chip} (PyTorch {self.data.run.device}). {qc}"
         )
 
     def provenance_sheet(self, created: str, methods: str) -> Sheet:

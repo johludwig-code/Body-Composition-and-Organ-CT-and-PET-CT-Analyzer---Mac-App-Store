@@ -9,6 +9,7 @@ the same tables. Regenerate after an intended change with
 from __future__ import annotations
 
 import csv
+import dataclasses
 import hashlib
 import io
 import json
@@ -339,7 +340,7 @@ def test_methods_text_and_provenance(project) -> None:
     assert export.methods_text == (
         "Segmentations were generated with MOOSE v3.2.2 (Shiyam Sundar et al., J Nucl Med "
         "2022), based on nnU-Net (Isensee et al., Nat Methods 2021), using Body Composition "
-        "and Organ CT and PET-CT Analyzer v0.1.0 on Apple M1 Pro (PyTorch mps). Results "
+        "and Organ CT and PET-CT Analyzer v0.1.0 on Apple M1 Pro (PyTorch mps). 3 of 4 series "
         "underwent visual quality control; 1 series were excluded."
     )
     provenance = dict(export.sheet("provenance").rows)
@@ -347,6 +348,28 @@ def test_methods_text_and_provenance(project) -> None:
     assert provenance["model.clin_ct_organs.sha256"] == "a" * 64
     assert "CC BY 4.0" in str(provenance["model_attribution"])
     assert json.loads(str(provenance["export_options"]))["layout"] == "wide"
+
+
+def _qc_sentence(project: export_data.ProjectData) -> str:
+    return _export(project).methods_text.split("(PyTorch mps). ")[1]
+
+
+def test_methods_text_claims_no_review_that_was_not_recorded(project) -> None:
+    # A real case exported straight after segmentation said "Results underwent
+    # visual quality control" although nobody had looked at it.
+    unreviewed = dataclasses.replace(project, qc=())
+    assert _qc_sentence(unreviewed) == "No visual quality control was recorded for these results."
+
+
+def test_methods_text_uses_the_plan_sentence_once_every_series_was_reviewed(project) -> None:
+    seen = [
+        export_data.QCEntry(key, None, None, "accepted", "JL", "2026-10-02T14:00:00Z", None)
+        for key in ("se2", "se6")
+    ]
+    reviewed = dataclasses.replace(project, qc=(*project.qc, *seen))
+    assert _qc_sentence(reviewed) == (
+        "Results underwent visual quality control; 1 series were excluded."
+    )
 
 
 # -- writers ---------------------------------------------------------------------------
