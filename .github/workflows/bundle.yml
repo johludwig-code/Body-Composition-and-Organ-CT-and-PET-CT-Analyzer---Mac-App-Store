@@ -1,0 +1,118 @@
+# The whole app with its backend, built and exercised on Apple Silicon:
+# runtime → model → licences → app → verify → worker in the sandbox.
+#
+# This is as much of spikes S1, S2 and S4 as a hosted runner can answer. What
+# it cannot: MPS performance on real hardware, a user-chosen folder through a
+# security-scoped bookmark, a Developer ID or App Store signature (S3).
+name: Bundle
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Scripts/**"
+      - "Worker/**"
+      - "Models/**"
+      - "App/Resources/*.entitlements"
+      - "project.yml"
+      - "Makefile"
+      - ".github/workflows/bundle.yml"
+
+jobs:
+  bundle:
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      APP: build/Build/Products/Release/BCOAnalyzer.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Tools
+        run: |
+          brew install xcodegen
+          sw_vers
+          sysctl -n machdep.cpu.brand_string hw.memsize hw.ncpu
+
+      - name: Cache downloads (CPython archive, model archives)
+        uses: actions/cache@v4
+        with:
+          path: build/cache
+          key: downloads-${{ hashFiles('Scripts/build_runtime.sh', 'Models/manifest.lock.json') }}
+
+      - name: Runtime (pinned CPython, locked packages, ADR 0014 trim)
+        run: make runtime
+
+      - name: Model (clin_ct_organs, checked against the lock)
+        run: make models MODELS="clin_ct_organs"
+
+      - name: Licences (fails on GPL, LGPL or unknown)
+        run: make licenses
+
+      - name: S1 outside the app (bundled Python, phantom, no sandbox)
+        run: |
+          /usr/bin/time -l Scripts/run_selftest.sh clin_ct_organs | tee build/s1-selftest.jsonl
+          tail -1 build/s1-selftest.jsonl | grep -q '"status":"ok"'
+
+      - name: App (Release, ad hoc, backend embedded and signed)
+        run: make app CONFIG=Release
+
+      - name: Verify (itms-services, entitlements, signatures, manifest, ADR 0014)
+        run: make verify
+
+      - name: Sandboxed probe in the app bundle
+        run: |
+          swiftc -O Scripts/ci/WorkerProbe.swift -o "$APP/Contents/MacOS/bcoa-probe"
+          codesign --force --sign - --options runtime -i de.ludwig.bcoanalyzer.probe \
+            --entitlements App/Resources/BCOAnalyzer.entitlements "$APP/Contents/MacOS/bcoa-probe"
+          # The probe changed the bundle; seal it again around the signed tree.
+          codesign --force --sign - --options runtime \
+            --entitlements App/Resources/BCOAnalyzer.entitlements "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: S2 in the sandbox (worker inherits; a folder nobody granted stays closed)
+        run: |
+          "$APP/Contents/MacOS/bcoa-probe" spike_s2 \
+            "{\"source_dir\": \"$GITHUB_WORKSPACE/Protocol/fixtures\"}" | tee build/s2.jsonl
+          python3 - build/s2.jsonl <<'PY'
+          import json, sys
+          events = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+          result = next(e for e in events if e["type"] == "result")["payload"]
+          print(json.dumps(result, indent=1))
+          assert result["sandboxed"], "worker does not see the sandbox"
+          assert result["write_project"]["ok"], "worker cannot write the project"
+          # No open panel granted this folder: the sandbox must refuse it.
+          assert not result["read_source"]["ok"], "sandbox did not stop an ungranted read"
+          assert events[-1]["status"] == "ok"
+          PY
+
+      - name: S1 in the sandbox (self-test with inference through the signed tree)
+        run: |
+          /usr/bin/time -l "$APP/Contents/MacOS/bcoa-probe" selftest \
+            '{"inference": true, "inference_model": "clin_ct_organs"}' | tee build/s1-sandbox.jsonl
+          python3 - build/s1-sandbox.jsonl <<'PY'
+          import json, sys
+          events = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+          result = next(e for e in events if e["type"] == "result")["payload"]
+          print(json.dumps(result, indent=1))
+          assert result["checksum_mismatches"] == []
+          assert result["inference"]["same_grid"]
+          assert events[-1]["status"] == "ok"
+          PY
+
+      - name: Reports
+        if: always()
+        run: |
+          cat build/runtime/size-report.txt || true
+          cat build/Build/Products/Release/size-report.txt || true
+          du -sh "$APP" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bundle-reports
+          path: |
+            build/runtime/size-report.txt
+            build/Build/Products/Release/size-report.txt
+            build/licenses/THIRD_PARTY_NOTICES.md
+            build/*.jsonl
+            build/s1/Study.bcoaproj/logs

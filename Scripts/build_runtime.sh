@@ -88,6 +88,30 @@ if [[ -f "$SITE/moosez/nnUNet_custom_trainer/MOOSE_custom_trainers.py" ]]; then
      "$SITE/nnunetv2/training/nnUNetTrainer/variants/MOOSE_custom_trainers.py"
 fi
 
+# ADR 0014: parts of the locked packages the worker never loads and that a
+# Store app should not carry. Each was checked against a real inference run
+# with the part blocked (labelmaps bit-identical):
+# - blosc2 dlopens TinyCC (LGPL-2.1), a C compiler used as a JIT for array
+#   expressions, and falls back to its interpreter when it is missing. A JIT
+#   needs an entitlement the app does not have, and compiling code at run
+#   time is exactly what App Review 2.5.2 looks for.
+# - connected-components-3d (LGPL-3.0) is imported only by acvl_utils'
+#   morphology helpers, which nnU-Net inference and MOOSE never call.
+# - python-gdcm brings its own OpenSSL; pydicom treats it as optional, and the
+#   app reads DICOM through dcm2niix.
+# - setuptools (vendoring LGPL code) is a build tool; torch lists it only for
+#   compiling C++ extensions.
+log "removing package parts the worker never loads (ADR 0014)"
+rm -f "$SITE"/blosc2/lib/libtcc.*
+rm -rf "$SITE"/blosc2/share/miniexpr "$SITE"/blosc2-*.dist-info/licenses/miniexpr
+rm -rf "$SITE"/cc3d "$SITE"/connected_components_3d-*.dist-info
+rm -rf "$SITE"/_gdcm "$SITE"/gdcm.py "$SITE"/python_gdcm-*.dist-info
+rm -rf "$SITE"/setuptools "$SITE"/setuptools-*.dist-info "$SITE"/_distutils_hack \
+  "$SITE"/distutils-precedence.pth
+"$PY" -I -c 'import importlib.util as u, sys
+gone = [m for m in ("cc3d", "gdcm", "setuptools") if u.find_spec(m)]
+sys.exit(f"still importable: {gone}" if gone else 0)'
+
 # pip and the package installers' own metadata are not needed to run, and a
 # bundle that contains pip invites the question whether it installs code.
 rm -rf "$SITE"/pip "$SITE"/pip-*.dist-info "$PY_DIR"/bin/pip*

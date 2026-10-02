@@ -79,6 +79,24 @@ def test_pip_left_in_bundle_fails(app: Path, tmp_path: Path) -> None:
     assert any("installer" in f for f in failures)
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "lib/python3.12/site-packages/blosc2/lib/libtcc.dylib",
+        "lib/python3.12/site-packages/cc3d/__init__.py",
+        "lib/python3.12/site-packages/setuptools/__init__.py",
+    ],
+)
+def test_parts_removed_by_adr_0014_fail_if_they_come_back(
+    app: Path, tmp_path: Path, path: str
+) -> None:
+    target = app / "Contents/Resources/python" / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"x")
+    failures = verify_bundle.verify(app, _entitlements(tmp_path)).failures
+    assert any(path.split("/")[3] in f for f in failures)
+
+
 def test_the_shipped_entitlements_pass() -> None:
     root = Path(__file__).resolve().parents[2]
     report = verify_bundle.Report()

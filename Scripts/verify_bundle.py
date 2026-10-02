@@ -10,7 +10,8 @@ Checks (plan §15):
   3. every Mach-O file is signed (macOS only; reported as skipped elsewhere)
   4. model files match the manifest's SHA-256
   5. the licence report exists and is not empty
-  6. no installer left in the bundle (pip, ensurepip)
+  6. no installer left in the bundle (pip, ensurepip, setuptools), and none of
+     the parts ADR 0014 removes (TinyCC, cc3d, gdcm)
   7. a size report is written next to the app
 
 Plain Python 3 without third-party packages, so it runs with any interpreter.
@@ -162,11 +163,29 @@ def check_manifest(resources: Path, report: Report) -> None:
                 report.fail(f"{model['name']}: {rel} differs from the manifest")
 
 
+INSTALLERS = (
+    "bin/pip*",
+    "lib/python3*/ensurepip",
+    "lib/python3*/site-packages/pip",
+    "lib/python3*/site-packages/setuptools",
+)
+# ADR 0014. A JIT compiler and LGPL code the worker never loads; if one of
+# these reappears, a lock update brought it back and build_runtime.sh missed it.
+REMOVED = (
+    "lib/python3*/site-packages/blosc2/lib/libtcc*",
+    "lib/python3*/site-packages/cc3d",
+    "lib/python3*/site-packages/_gdcm",
+)
+
+
 def check_installers(resources: Path, report: Report) -> None:
     python = resources / "python"
-    for pattern in ("bin/pip*", "lib/python3*/ensurepip", "lib/python3*/site-packages/pip"):
+    for pattern in INSTALLERS:
         for hit in python.glob(pattern):
             report.fail(f"installer left in bundle: {hit.relative_to(resources)}")
+    for pattern in REMOVED:
+        for hit in python.glob(pattern):
+            report.fail(f"removed by ADR 0014 but present: {hit.relative_to(resources)}")
 
 
 def write_size_report(app: Path, files: list[Path]) -> Path:
