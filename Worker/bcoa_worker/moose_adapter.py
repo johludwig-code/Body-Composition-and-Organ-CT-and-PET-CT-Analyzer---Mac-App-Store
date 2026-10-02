@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import multiprocessing
 from collections.abc import Iterable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -61,6 +62,67 @@ class _NoNetwork:
             raise ModelNotInBundleError(f"Model not found in app bundle: {model}")
 
         return refuse
+
+
+class _Finished:
+    """An AsyncResult whose task has already run."""
+
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def ready(self) -> bool:
+        return True
+
+    def get(self, timeout: float | None = None) -> Any:
+        return self._value
+
+
+class _InPlacePool:
+    """A pool without workers: each task runs at once, in the calling thread.
+
+    nnU-Net asks `is_alive()` of every worker in `_pool` and holds back while
+    `not_ready >= len(_pool) + 2`; with no workers and every result ready,
+    neither check ever stops it.
+    """
+
+    def __init__(self, processes: int | None = None) -> None:
+        self._pool: list[Any] = []
+
+    def __enter__(self) -> _InPlacePool:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def apply_async(
+        self, func: Any, args: tuple[Any, ...] = (), kwds: dict[str, Any] | None = None
+    ) -> _Finished:
+        return _Finished(func(*args, **(kwds or {})))
+
+
+class _InPlaceContext:
+    # Capitalised because nnU-Net calls `get_context("spawn").Pool(...)`.
+    @staticmethod
+    def Pool(processes: int | None = None) -> _InPlacePool:
+        return _InPlacePool(processes)
+
+
+class _ExportInPlace:
+    """Stands in for the `multiprocessing` module inside nnU-Net's predictor.
+
+    nnU-Net resamples each predicted chunk in a pool of spawned processes. A
+    pool needs POSIX semaphores, and the App Sandbox refuses `sem_open` for
+    any name outside an app group: the first sandboxed run on Apple Silicon
+    failed there with EPERM (ADR 0015). Every other attribute is the real
+    module's.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(multiprocessing, name)
+
+    @staticmethod
+    def get_context(method: str | None = None) -> _InPlaceContext:
+        return _InPlaceContext()
 
 
 def weights_dir(resources_dir: Path) -> Path:
@@ -169,6 +231,13 @@ def harden(resources_dir: Path) -> None:
     moose_models.requests = _NoNetwork()
     moose_download.requests = _NoNetwork()
     moose_main.add_custom_trainers_to_local_nnunetv2 = _trainer_already_installed
+
+    import nnunetv2.inference.predict_from_raw_data as nnunet_predict
+
+    current = getattr(nnunet_predict, "multiprocessing", None)
+    if current is not multiprocessing and not isinstance(current, _ExportInPlace):
+        raise AdapterError("nnU-Net's predictor no longer imports multiprocessing as a module")
+    nnunet_predict.multiprocessing = _ExportInPlace()
 
 
 def verify_bundled_model(model: str, resources_dir: Path) -> Path:

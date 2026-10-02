@@ -62,6 +62,27 @@ def fake_site(tmp_path: Path) -> Iterator[Path]:
         "Metadata-Version: 2.4\nName: moosez\nVersion: 3.2.2\n",
     )
     _write(site / "nnunetv2" / "__init__.py", "")
+    _write(site / "nnunetv2" / "inference" / "__init__.py", "")
+    # The shape of nnunetv2 2.8.1's predict_from_data_iterator: a spawn pool,
+    # its workers' liveness, apply_async, get with a timeout.
+    _write(
+        site / "nnunetv2" / "inference" / "predict_from_raw_data.py",
+        """
+        import multiprocessing
+        def predict_from_data_iterator(chunks):
+            with multiprocessing.get_context("spawn").Pool(8) as export_pool:
+                worker_list = [i for i in export_pool._pool]
+                r = [export_pool.apply_async(sum, (chunk,)) for chunk in chunks]
+                results = []
+                for result in r:
+                    assert all(j.is_alive() for j in worker_list)
+                    try:
+                        results.append(result.get(timeout=0.1))
+                    except multiprocessing.TimeoutError:
+                        raise AssertionError("not finished")
+            return results
+        """,
+    )
     sys.path.insert(0, str(site))
     yield site
     sys.path.remove(str(site))
@@ -120,6 +141,57 @@ def test_missing_trainer_is_a_modified_bundle(fake_site: Path, resources: Path) 
 
     with pytest.raises(moose_adapter.BundleModifiedError):
         moose()
+
+
+@pytest.fixture
+def no_semaphores(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What the App Sandbox does to `sem_open` for a name outside an app group."""
+    import multiprocessing.synchronize
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(multiprocessing.synchronize.SemLock, "__init__", refuse)
+
+
+def test_a_spawn_pool_needs_a_semaphore(fake_site: Path, no_semaphores: None) -> None:
+    # The failure ADR 0015 is about, reproduced: without the adapter the
+    # predictor cannot even open its pool.
+    from nnunetv2.inference import predict_from_raw_data
+
+    with pytest.raises(PermissionError):
+        predict_from_raw_data.predict_from_data_iterator([[1, 2]])
+
+
+def test_the_export_runs_without_a_semaphore(
+    fake_site: Path, resources: Path, no_semaphores: None
+) -> None:
+    moose_adapter.harden(resources)
+    from nnunetv2.inference import predict_from_raw_data
+
+    assert predict_from_raw_data.predict_from_data_iterator([[1, 2], [3, 4], [5]]) == [3, 7, 5]
+
+
+def test_the_predictor_keeps_the_rest_of_multiprocessing(fake_site: Path, resources: Path) -> None:
+    import multiprocessing
+
+    moose_adapter.harden(resources)
+    moose_adapter.harden(resources)
+    from nnunetv2.inference import predict_from_raw_data
+
+    stand_in = predict_from_raw_data.multiprocessing
+    assert stand_in is not multiprocessing
+    assert stand_in.TimeoutError is multiprocessing.TimeoutError
+    assert stand_in.cpu_count() == multiprocessing.cpu_count()
+
+
+def test_a_predictor_of_another_shape_is_refused(fake_site: Path, resources: Path) -> None:
+    _write(
+        fake_site / "nnunetv2" / "inference" / "predict_from_raw_data.py",
+        "from multiprocessing import get_context\n",
+    )
+    with pytest.raises(moose_adapter.AdapterError, match="multiprocessing"):
+        moose_adapter.harden(resources)
 
 
 def test_other_moosez_version_is_refused(fake_site: Path, resources: Path) -> None:

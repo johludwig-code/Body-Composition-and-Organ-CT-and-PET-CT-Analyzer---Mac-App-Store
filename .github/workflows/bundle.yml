@@ -146,6 +146,12 @@ jobs:
             echo "::error::the sandboxed worker tried to use the network"
             exit 1
           fi
+          # A refused semaphore is a process pool or lock that will not work
+          # in the app (ADR 0015).
+          if grep -Eq "deny\([0-9]+\) ipc-posix-sem" build/sandbox-denials.txt; then
+            echo "::error::the sandboxed worker tried to create a POSIX semaphore"
+            exit 1
+          fi
 
       - name: Worker logs (on failure)
         if: failure()

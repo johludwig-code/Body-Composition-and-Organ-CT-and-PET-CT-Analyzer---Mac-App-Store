@@ -43,6 +43,11 @@ def runtime_environment(job: Job) -> dict[str, str]:
         # no reason to run, and if it ever did it must not try the network.
         "HF_HUB_OFFLINE": "1",
         "HF_HUB_DISABLE_TELEMETRY": "1",
+        # joblib (through scikit-learn) creates a POSIX semaphore at import to
+        # see whether it may use processes. The sandbox refuses it, which
+        # joblib survives with a warning and the kernel logs as a violation
+        # (ADR 0015); this tells it to stay serial without trying.
+        "JOBLIB_MULTIPROCESSING": "0",
     }
 
 
