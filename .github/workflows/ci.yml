@@ -1,4 +1,3 @@
-# Active once BCOAnalyzer/ is the root of its own repository (ADR 0002).
 name: CI
 
 on:

@@ -21,7 +21,7 @@ the owner says so.
 
 | # | question | context | recommendation |
 |---|---|---|---|
-| 9 | Own repository | the owner chose an own repository on 2 October 2026 | move with `git subtree split` once it exists (ADR 0002) |
+| 9 | Own repository | chosen by the owner on 2 October 2026 | done (ADR 0002) |
 | 10 | App icon | the Store needs one; no "MOOSE" in name or icon (Apple 4.1(c)) | commission or design one; `AppIcon.appiconset` is empty |
 | 11 | `tiny_component` auto-QC flag | BOCARTA-MOOSE saw MOOSE report a 0.1 mL spleen in a pelvic CT — a fragment at the field-of-view edge, not an organ | add to §12: flag labels whose volume is below a per-label minimum, export as empty with a QC note |
 | 12 | Export compliance (`ITSAppUsesNonExemptEncryption = NO`) | the bundled CPython carries OpenSSL, which the app never uses for transport (no network entitlement) | keep NO; confirm in S3 that App Store Connect accepts it; alternatively drop `_ssl` from the runtime if MOOSE still imports without it |

@@ -1,9 +1,8 @@
 # Working on BCOA with Claude Code
 
-This folder is its own project. It was started fresh and is kept apart from the
-Bocarta/BTM app around it so that it can move to its own repository unchanged.
-Nothing outside this folder is part of it, and the rules in the parent
-`CLAUDE.md` do not apply here.
+This repository was started fresh on 2 October 2026. BOCARTA-MOOSE (the
+Bocarta/BTM app) is a source of knowledge only and is never modified from here
+(ADR 0012).
 
 Read `docs/PLAN.md` completely before changing anything. The plan is the source
 of truth; a deviation is recorded as an ADR in `docs/adr/` and the plan is
