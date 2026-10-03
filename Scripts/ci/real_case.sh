@@ -83,15 +83,32 @@ print("[real-case] conv3d", json.dumps(out))
 log "memory before the runs: $(sysctl -n vm.swapusage), $(memory_pressure | tail -1)"
 
 # The worker's peak memory is what decides which Macs can run a model; the
-# probe's own rusage does not include its child, so it is sampled here.
-# Every five minutes it also says that the run is alive, because a step that
-# times out prints nothing of its own.
+# probe's own rusage does not include its child, so it is sampled here. RSS
+# leaves out what MPS allocates through Metal: the organ model peaked at
+# 2.9 GB RSS on MPS and 7.7 GB on a Linux CPU. top's MEM column is the
+# memory footprint, which counts it, so both are kept; top is slow, so it is
+# read every ten seconds.
+# Every five minutes the sampler also says that the run is alive, because a
+# step that times out prints nothing of its own.
+footprint_mb() {
+  top -l 1 -stats command,mem 2>/dev/null | awk '
+    $1 ~ /^python3/ {
+      v = $2; gsub(/[+-]$/, "", v); unit = substr(v, length(v)); n = v + 0
+      if (unit == "G") n *= 1024; else if (unit == "K") n /= 1024; else if (unit == "B") n /= 1048576
+      s += n
+    }
+    END { printf "%d", s }'
+}
 sample_memory() {
-  local peak=0 now ticks=0
+  local peak=0 fp_peak=0 now fp ticks=0
   while sleep 2; do
     now="$(ps -axo rss=,comm= | awk '/python3/ {s += $1} END {print s + 0}')"
     (( now > peak )) && peak=$now && echo "$peak" > "$WORK/peak_rss_kb"
-    (( ++ticks % 150 == 0 )) && log "still running after $((ticks * 2)) s, peak $((peak / 1024)) MB"
+    if (( ticks % 5 == 0 )); then
+      fp="$(footprint_mb)"
+      (( fp > fp_peak )) && fp_peak=$fp && echo "$fp_peak" > "$WORK/peak_footprint_mb"
+    fi
+    (( ++ticks % 150 == 0 )) && log "still running after $((ticks * 2)) s, peak RSS $((peak / 1024)) MB, footprint $fp_peak MB"
   done
 }
 
@@ -102,7 +119,7 @@ sample_memory() {
 segment() {
   local model="$1" device="$2" series="$3" tag="$4" input="$5"
   log "segmenting $input with $model on $device"
-  echo 0 > "$WORK/peak_rss_kb"
+  echo 0 > "$WORK/peak_rss_kb"; echo 0 > "$WORK/peak_footprint_mb"
   sample_memory & sampler=$!
   start=$(date +%s)
   status=0
@@ -111,9 +128,9 @@ segment() {
   end=$(date +%s)
   kill "$sampler" 2>/dev/null || true
   wait "$sampler" 2>/dev/null || true
-  printf '{"run": "%s", "wall_s": %d, "peak_rss_gb": %.2f, "exit": %d}\n' \
+  printf '{"run": "%s", "wall_s": %d, "peak_rss_gb": %.2f, "peak_footprint_gb": %.2f, "exit": %d}\n' \
     "$tag" $((end - start)) "$(echo "$(cat "$WORK/peak_rss_kb") / 1048576" | bc -l)" \
-    "$status" | tee -a "$WORK/timings.jsonl"
+    "$(echo "$(cat "$WORK/peak_footprint_mb") / 1024" | bc -l)" "$status" | tee -a "$WORK/timings.jsonl"
   sysctl vm.swapusage
 }
 
