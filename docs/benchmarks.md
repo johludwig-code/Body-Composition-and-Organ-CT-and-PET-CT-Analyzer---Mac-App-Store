@@ -87,8 +87,8 @@ The CT of one public whole-body FDG PET/CT from ACRIN-NSCLC-FDG-PET (CC BY
 3.0, doi:10.7937/tcia.2019.30ilqfcl), fetched from the Imaging Data Commons
 when a job runs; nothing of it is in the repository. 356 slices, converted
 with the bundled dcm2niix. The patient weighed 42 kg, which is worth knowing
-before reading the volumes: liver 820 mL, kidneys 65 and 85 mL, pancreas
-12 mL, spleen 134 mL. All ten models ran offline; every labelmap is on the
+before reading the volumes: liver 809 mL, kidneys 62 and 80 mL, pancreas
+11 mL, spleen 132 mL. All ten models ran offline; every labelmap is on the
 CT's grid; 128 of the 144 structures are present, and the 16 missing ones
 are bones outside the field of view (13 peripheral bones, two ribs, one
 vertebra), which the export flags as `empty_label`.
@@ -102,20 +102,23 @@ place, the way back to the CT's grid).
 
 | organ | MOOSE | TotalSegmentator | Dice |
 |---|---|---|---|
-| liver | 819.7 mL | 820.2 mL | 0.962 |
-| spleen | 134.0 mL | 133.3 mL | 0.946 |
-| trachea | 39.1 mL | 38.4 mL | 0.918 |
-| kidney, left | 84.9 mL | 75.4 mL | 0.874 |
-| kidney, right | 65.2 mL | 88.6 mL | 0.808 |
-| adrenal gland, left | 1.1 mL | 1.3 mL | 0.758 |
-| thyroid | 7.8 mL | 7.5 mL | 0.732 |
-| pancreas | 12.4 mL | 16.7 mL | 0.654 |
-| stomach | 87.6 mL | 197.1 mL | 0.589 |
-| adrenal gland, right | 0.5 mL | 0.5 mL | 0.537 |
+| liver | 809.1 mL | 820.2 mL | 0.961 |
+| spleen | 131.9 mL | 133.3 mL | 0.944 |
+| trachea | 39.3 mL | 38.4 mL | 0.917 |
+| kidney, left | 80.1 mL | 75.4 mL | 0.864 |
+| kidney, right | 62.1 mL | 88.6 mL | 0.788 |
+| adrenal gland, left | 1.1 mL | 1.3 mL | 0.752 |
+| thyroid | 7.7 mL | 7.5 mL | 0.733 |
+| pancreas | 11.1 mL | 16.7 mL | 0.618 |
+| stomach | 82.6 mL | 197.1 mL | 0.570 |
+| adrenal gland, right | 0.6 mL | 0.5 mL | 0.546 |
 | urinary bladder | 10.0 mL | 79.2 mL | 0.117 |
-| gallbladder | 1.1 mL | none | – |
+| gallbladder | 0.7 mL | none | – |
 
-Liver, spleen and trachea agree within 2 %: the chain does not distort the
+MOOSE's column is the organ model with both corrections of ADR 0018; the
+numbers before them are in "Two faults of moosez 3.2.2" below.
+
+Liver, spleen and trachea agree within 2.5 %: the chain does not distort the
 result, and the small volumes are the patient. Where the two models
 disagree, one case cannot say which is right. The voxels only
 TotalSegmentator calls bladder average 240 HU (95th percentile 377), MOOSE's
@@ -128,8 +131,8 @@ PET, checked outside the app (SUV is phase 2): the organ labelmap resampled
 to the PET grid by nearest neighbour gives liver SUVmean 1.48, spleen 1.37,
 brain 4.50, bladder 27.4, and SUVmax 13.6 in the left lower lobe, where the
 collection's own tumour segmentation (AIMI, BAMF) puts a 104 mL lesion. The
-lungs measure 5 070 mL in MOOSE's five lobes and 5 303 mL in that
-independent segmentation (−4.4 %).
+lungs measure 5 262 mL in MOOSE's five lobes and 5 303 mL in that
+independent segmentation (−0.8 %; −4.4 % before ADR 0018).
 
 ## Trimmed runtime against the full one
 
@@ -172,6 +175,77 @@ without, and the result is not the same:
 The app keeps mirroring: a number that differs from what MOOSE gives
 elsewhere for the same CT would be a number nobody can reproduce
 (OPEN_QUESTIONS #16).
+
+## Two faults of moosez 3.2.2
+
+Both found on the real case while building the sample PDF report, both
+corrected in the adapter (ADR 0018), both measured by running the models
+again on the same CT with the corrected adapter.
+
+**The lungs model sees the CT mirrored.** Its lobes against the organ
+model's lobes of the same name, before and after the adapter mirrors the CT
+for it:
+
+| lobe | lungs model, before | after | organ model, before | after | Dice, before | after |
+|---|---|---|---|---|---|---|
+| upper lobe, left | 1 180.7 mL | 1 429.3 mL | 1 427.3 mL | 1 442.8 mL | 0.00 | 0.981 |
+| lower lobe, left | 1 601.8 mL | 1 029.6 mL | 879.3 mL | 988.9 mL | 0.00 | 0.956 |
+| upper lobe, right | 1 225.3 mL | 871.6 mL | 859.2 mL | 858.1 mL | 0.00 | 0.973 |
+| middle lobe, right | 155.0 mL | 318.1 mL | 307.1 mL | 332.2 mL | 0.00 | 0.956 |
+| lower lobe, right | 1 055.5 mL | 1 636.2 mL | 1 597.6 mL | 1 640.0 mL | 0.00 | 0.986 |
+
+Before, the lungs model's "left" lobes lay in the right lung and its left
+lung had three lobes; the organ model's columns change because of the
+second fault.
+
+**Block edges of the resampled image are water.** moosez resamples in
+blocks, and the last output slice of each block lay beyond the block's
+input and came out as 0 HU: resampled slices 296 and 593 of 593, one in the
+chest (CT slice 178), one in the last slice, just above the brain. Lung
+voxels per CT slice:
+
+| CT slice | lungs model, before | after | organ model's lobes, before | after |
+|---|---|---|---|---|
+| 176 | 22 939 | 23 649 | 21 230 | 23 513 |
+| 177 | 21 523 | 23 687 | 12 679 | 23 606 |
+| 178 | 1 304 | 23 712 | 1 506 | 23 482 |
+| 179 | 1 407 | 23 629 | 6 299 | 23 502 |
+| 180 | 24 017 | 23 931 | 19 871 | 23 802 |
+| 181 | 24 291 | 23 969 | 23 637 | 23 883 |
+
+(The lungs model's "before" is the mirrored run, so its slices compare
+counts, not lobes.) The organ model's five lobes grew from 5 070 to
+5 262 mL, against 5 303 mL in the collection's independent segmentation.
+
+The plane reached further than its own slice. nnU-Net predicts in
+overlapping windows, and every window that held the plane predicted
+differently: the organ labelmap changed in CT slices 100 to 258 around the
+chest plane and 300 to 348 below the top one, and in no other slice. So
+the organs within a window of the chest moved too:
+
+| organ | before | after | Dice, before against after |
+|---|---|---|---|
+| liver | 819.7 mL | 809.1 mL | 0.991 |
+| kidney, left | 84.9 mL | 80.1 mL | 0.967 |
+| kidney, right | 65.2 mL | 62.1 mL | 0.972 |
+| stomach | 87.6 mL | 82.6 mL | 0.949 |
+| pancreas | 12.4 mL | 11.1 mL | 0.927 |
+| spleen | 134.0 mL | 131.9 mL | 0.991 |
+| brain | 1 253.9 mL | 1 253.3 mL | 0.997 |
+| urinary bladder | 10.0 mL | 10.0 mL | 1.000 |
+
+The bladder, in CT slices 32 to 39, is out of every window's reach. The
+change does not bring the abdominal organs closer to TotalSegmentator
+(kidney, left: Dice 0.874 before, 0.864 after; pancreas 0.654 and 0.618):
+it is the model's answer to a CT without a plane of water in it, not a
+better model.
+
+Two things were tried first and did not help or were not taken:
+
+| attempt | result |
+|---|---|
+| a wider overlap between moosez's inference chunks (112 slices instead of 20, half a patch) | still 662 and 747 lung voxels in CT slices 178 and 179; peak 6.50 GB. The plane is already in the resampled image |
+| resampling the whole image in one piece instead of in blocks | the plane is gone, and so is the block grid's shift of a third of a voxel; the organs move a little further (liver 801.3 mL, kidneys 78.2 and 61.7 mL); 1 777 s and 7.72 GB for lungs and organs. Not taken: it moves the numbers away from MOOSE's beyond what the fault needs |
 
 ## The export, read back
 

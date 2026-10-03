@@ -27,9 +27,13 @@ last input slice, SimpleITK fills it with 0. The public CT has 356 slices of
 1.5 mm beyond the input, so resampled slices 296 and 593 were 0 HU
 everywhere, a plane of water across the body. The first plane lies in the
 chest: in CT slices 178 and 179 the lungs model found 1 304 and 1 407 lung
-voxels instead of about 23 600, the organ model 1 506 and 6 299. The number
-of such planes and where they fall depends on each model's spacing and each
-CT's size.
+voxels instead of about 23 600, the organ model 1 506 and 6 299. The plane
+reaches further than its own slice: nnU-Net predicts in overlapping
+windows, and every window that holds the plane predicts differently. The
+organ model's labelmap changed wherever a window could reach the plane, up
+to 80 CT slices (200 mm) from it, and nowhere else. The number of such
+planes and where they fall depends on each model's spacing and each CT's
+size.
 
 Neither fault is visible in the export: the volumes are the size of real
 organs, and a lobe on the wrong side keeps its name.
@@ -58,10 +62,16 @@ chunking; and every other model's orientation.
 
 ## Consequences
 
-- On the public CT both corrections were measured in a full run of all ten
-  models (`docs/benchmarks.md`, "Two faults of moosez 3.2.2").
+- On the public CT (`docs/benchmarks.md`, "Two faults of moosez 3.2.2") the
+  lungs model's lobes now match the organ model's (Dice 0.956 to 0.986), the
+  organ model's five lobes grew from 5 070 to 5 262 mL (the collection's
+  independent segmentation: 5 303 mL), and the organs within a window of
+  the chest plane moved as well: liver 819.7 to 809.1 mL, kidneys 84.9 to
+  80.1 and 65.2 to 62.1 mL, stomach 87.6 to 82.6 mL. The urinary bladder,
+  out of every window's reach, kept every voxel.
 - The app's numbers for a CT differ from MOOSE's own for the same CT: the
-  lungs model's everywhere, every other model's near a block edge. The
+  lungs model's everywhere, every other model's within a window of a block
+  edge. The
   methods text of the export must say so; it is written by the export job
   (PR #2), which gets that sentence when both changes are on main.
 - The corrections are tied to moosez 3.2.2 and to the pinned weights
@@ -82,12 +92,13 @@ chunking; and every other model's orientation.
   6.50 GB) still missed the lung in CT slices 178 and 179; the 0 HU plane is
   already in the resampled image.
 - **Resample the whole image in one piece.** It removes the plane and the
-  third-of-a-voxel shift, but it moves every other organ too: liver 819.7 to
-  801.3 mL, the kidneys 84.9 to 78.2 and 65.2 to 61.7 mL, peak memory
-  7.72 GB. A sub-voxel shift is within what nnU-Net gives for a CT shifted by
-  that much; the plane of water is not. Keeping the blocks keeps the app's
-  numbers as close to MOOSE's as the fault allows.
-- **Leave both and flag them in QC.** A flag cannot give back 100 mL of lung
+  third-of-a-voxel shift, and moves the organs a little further than the
+  plane alone does: liver 801.3 mL instead of 809.1, kidneys 78.2 and 61.7
+  instead of 80.1 and 62.1, peak memory 7.72 GB. That remainder is what
+  nnU-Net gives for an image shifted by a fraction of a voxel; the plane of
+  water is a fault. Keeping the blocks keeps the app's numbers as close to
+  MOOSE's as the fault allows.
+- **Leave both and flag them in QC.** A flag cannot give back 190 mL of lung
   or put a lobe on the right side.
 - **Patch MOOSE's sources.** The plan allows that only in an emergency
   (§4, §20); a runtime patch in the adapter does the same and leaves the
