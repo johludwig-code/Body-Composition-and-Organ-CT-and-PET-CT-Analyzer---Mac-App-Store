@@ -240,6 +240,26 @@ change does not bring the abdominal organs closer to TotalSegmentator
 it is the model's answer to a CT without a plane of water in it, not a
 better model.
 
+The other eight models, run again with both corrections (12 226 s for the
+last five on four cores, peak 10.6 GB):
+
+| model | voxels that differ | largest change |
+|---|---|---|
+| peripheral bones | 12 142 | right metacarpals 4.2 to 3.5 mL |
+| cardiac | 11 210 | left ventricle 47.7 to 50.5 mL, myocardium 44.8 to 47.2 mL |
+| vertebrae | 4 558 | T10 30.7 to 33.5 mL |
+| ribs | 2 720 | no rib by more than 0.2 mL |
+| muscles | 1 953 | left paraspinal muscles 280.3 to 278.9 mL |
+| digestive | 891 | duodenum 18.3 to 17.3 mL |
+| body | 0 | – |
+| body composition | 0 | – |
+
+Two models have no plane to fill: the body model resamples to 5 mm, and
+445 mm of input make exactly 89 slices; the body composition model works on
+a crop around L3, shorter than one block, that its fast vertebra model
+(3 mm, 148 slices per block, the last one inside the input) finds first. Of
+the 144 structures, 128 are present, as before.
+
 Two things were tried first and did not help or were not taken:
 
 | attempt | result |
