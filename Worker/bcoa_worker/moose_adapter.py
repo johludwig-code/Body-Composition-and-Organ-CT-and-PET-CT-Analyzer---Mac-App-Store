@@ -282,7 +282,13 @@ def segment(
     outputs, used = moose(str(input_nifti), [model], str(out_dir), accelerator)
     if len(outputs) != 1:
         raise AdapterError(f"{model}: expected one labelmap, got {len(outputs)}")
-    labels = {int(k): str(v) for k, v in used[0].organ_indices.items()}
+    # MOOSE drops background by comparing each dataset.json value with the
+    # string "0". Nine of the ten clinical models store their labels as
+    # strings; the lungs model (Dataset333_HMS3dlungs) stores integers, so its
+    # background came through as an organ and the export of the real case
+    # carried a 217-litre "lungs / background" row. Label 0 is never a
+    # structure, whatever type the model wrote it as.
+    labels = {int(k): str(v) for k, v in used[0].organ_indices.items() if int(k) != 0}
     return Path(outputs[0]), labels
 
 

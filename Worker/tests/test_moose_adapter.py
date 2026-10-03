@@ -270,3 +270,37 @@ def test_dependencies_come_first_and_once() -> None:
     assert moose_adapter.required_models(
         ["clin_ct_organs", "clin_ct_body_composition", "clin_ct_fast_vertebrae"], registry
     ) == ["clin_ct_organs", "clin_ct_fast_vertebrae", "clin_ct_body_composition"]
+
+
+def _fake_moose(site: Path, labels: str) -> None:
+    # moosez 3.2.2's Model.__get_organ_indices, verbatim: background is
+    # dropped by comparing with the string "0".
+    _write(
+        site / "moosez" / "moosez.py",
+        f"""
+        class _Model:
+            def __init__(self, labels):
+                self.dataset = {{"labels": labels}}
+                self.organ_indices = {{
+                    int(value): key for key, value in labels.items() if value != "0"
+                }}
+        def moose(input_path, models, out_dir, accelerator):
+            return [out_dir + "/labels.nii.gz"], [_Model({labels})]
+        """,
+    )
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [
+        '{"background": "0", "lung_upper_lobe_left": "1", "trachea": "6"}',
+        # Dataset333_HMS3dlungs writes its labels as integers.
+        '{"background": 0, "lung_upper_lobe_left": 1, "trachea": 6}',
+    ],
+)
+def test_background_is_never_a_label(fake_site: Path, tmp_path: Path, labels: str) -> None:
+    _fake_moose(fake_site, labels)
+    _, found = moose_adapter.segment(
+        tmp_path / "ct.nii.gz", "clin_ct_lungs", tmp_path / "out", "cpu"
+    )
+    assert found == {1: "lung_upper_lobe_left", 6: "trachea"}
