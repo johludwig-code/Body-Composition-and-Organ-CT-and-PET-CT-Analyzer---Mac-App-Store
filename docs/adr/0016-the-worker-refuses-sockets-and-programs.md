@@ -14,7 +14,7 @@ refused the worker four kinds of operation:
 | refusal | cause, found by running the same job under a Python audit hook on Linux |
 |---|---|
 | `network-bind local:*:0` | urllib3, imported through `requests` by `moosez.download`, binds an IPv6 socket at import to find out whether the machine has IPv6 (`urllib3/util/connection.py`, `_has_ipv6`) |
-| `file-read-data /dev/fd` (three times) | CPython listing open descriptors in a child it is about to start: nnU-Net runs `hostname` in a shell at import (`nnunetv2/configuration.py`), and matplotlib runs `system_profiler` (`fc-list` on Linux) to list the system's fonts when it builds its font cache |
+| `file-read-data /dev/fd` (three times) | CPython listing open descriptors in a child it is about to start, one per program: nnU-Net runs `hostname` at import (`nnunetv2/configuration.py`), and matplotlib, building its font cache, runs `fc-list` and, on macOS only, `system_profiler` to list the system's fonts (`matplotlib/font_manager.py`, `findSystemFonts`) |
 | `ipc-posix-sem-create` | tqdm's lock, already settled by ADR 0015 |
 | `file-read-data /private/tmp` | not reproduced on Linux; the next run's report lists each refusal with its time |
 
@@ -55,6 +55,16 @@ the frames that asked for it.
   is bit-identical to the one without it; the guard refused the urllib3
   socket, `fc-list`, and on Linux only, three programs ctypes tries while
   looking for `libdl` for the CUDA package, which is not in the macOS wheels.
+- Code that only runs on macOS cannot be exercised on Linux, so it was read
+  instead: of the 4 057 module files that importing the worker, MOOSE,
+  nnU-Net's predictor and trainer, torch, SimpleITK and matplotlib loads,
+  136 lines start a program. Those inside a macOS branch are matplotlib's
+  `system_profiler` (tolerates `OSError`), numexpr's `sysctl` (not reached:
+  macOS answers `os.sysconf("SC_NPROCESSORS_ONLN")` first), joblib's
+  `sysctl` (inside `except Exception`, and joblib is held to one process by
+  `JOBLIB_MULTIPROCESSING=0`), and code that only runs when asked
+  (`pandas` locales, sympy's preview, torch's compiler). The real case on
+  the Mac remains the test that counts.
 - Processes started without Python's own functions (multiprocessing's spawn
   calls `_posixsubprocess` directly) raise no audit event. ADR 0015 keeps
   nnU-Net from starting them, and they need semaphores, which the sandbox

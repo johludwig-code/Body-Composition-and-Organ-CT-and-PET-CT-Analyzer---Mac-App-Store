@@ -130,8 +130,8 @@ def test_urllib3_imports_without_a_socket(tmp_path: Path) -> None:
 
 
 def test_matplotlib_builds_its_font_cache_without_a_program(tmp_path: Path) -> None:
-    # matplotlib lists the system's fonts with fc-list on Linux and
-    # system_profiler on macOS; refused, it uses the fonts it ships.
+    # matplotlib lists the system's fonts with fc-list, and on macOS also
+    # with system_profiler; refused, it uses the fonts it ships.
     pytest.importorskip("matplotlib")
     out = _child(
         """

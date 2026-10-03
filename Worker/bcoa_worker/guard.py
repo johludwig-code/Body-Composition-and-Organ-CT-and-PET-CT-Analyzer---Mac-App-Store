@@ -5,9 +5,9 @@ nobody granted, but it does so by logging a violation and failing the call
 somewhere deep inside a library. The first real CT segmented by the sandboxed
 worker on Apple Silicon left four such violations in the kernel log: urllib3,
 imported by MOOSE for its downloader, binds an IPv6 socket at import to learn
-whether the machine has IPv6; nnU-Net runs `hostname` in a shell at import;
-matplotlib runs `system_profiler` to list the Mac's fonts when it builds its
-font cache. None of it is needed to segment a CT.
+whether the machine has IPv6; nnU-Net runs `hostname` at import; matplotlib
+runs `fc-list` and `system_profiler` to list the Mac's fonts when it builds
+its font cache. None of it is needed to segment a CT.
 
 An audit hook sees each of those before the operating system does and refuses
 it with PermissionError, which every one of these callers already tolerates:
