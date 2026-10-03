@@ -46,15 +46,41 @@ mkdir -p "$WORK/nifti"
 "$D2N" -z y -b y -ba y -f ct -o "$WORK/nifti" "$WORK/dicom/CT" >/dev/null
 mkdir -p "$PROJECT/work/s_ct" "$PROJECT/work/s_crop"
 cp "$WORK/nifti/ct.nii.gz" "$PROJECT/work/s_ct/ct.nii.gz"
-# The CPU half of the device comparison runs on 64 of the 356 slices, from
-# the kidneys to the lung bases (liver, spleen, pancreas, stomach, adrenals):
-# the whole CT on the runner's CPU did not finish within 68 minutes, where
-# MPS took under seven. Both devices see the same crop.
+# The CPU half of the device comparison runs on a block of the upper abdomen:
+# slices 96 to 160 (kidneys to lung bases) and 192 by 192 pixels around the
+# pancreas, which holds the adrenals, kidneys, pancreas, stomach and parts of
+# liver and spleen. nnU-Net pads anything shorter than its 224-slice patch,
+# so fewer slices alone save nothing; the pixel crop cuts the sliding
+# windows from 36 to 4. The whole CT on the runner's CPU had not finished
+# after 68 minutes, nor had 64 whole slices after 34. Both devices see the
+# same block.
 "$PY" -I -c '
 import sys, SimpleITK as sitk
 ct = sitk.ReadImage(sys.argv[1])
-sitk.WriteImage(ct[:, :, 96:160], sys.argv[2], True)
+sitk.WriteImage(ct[176:368, 176:368, 96:160], sys.argv[2], True)
 ' "$PROJECT/work/s_ct/ct.nii.gz" "$PROJECT/work/s_crop/ct.nii.gz"
+
+# Why the CPU is that slow: one convolution of the organ model's first-stage
+# size, timed on each device with the bundled torch, outside the sandbox.
+"$PY" -I -c '
+import json, time, torch
+x = torch.randn(1, 32, 224, 96, 96)
+conv = torch.nn.Conv3d(32, 32, 3, padding=1)
+out = {"threads": torch.get_num_threads(), "mkldnn": torch.backends.mkldnn.is_available()}
+for device in ("cpu", "mps"):
+    if device == "mps" and not torch.backends.mps.is_available():
+        continue
+    c, y = conv.to(device), x.to(device)
+    with torch.no_grad():
+        c(y)
+        if device == "mps": torch.mps.synchronize()
+        start = time.perf_counter()
+        for _ in range(3): c(y)
+        if device == "mps": torch.mps.synchronize()
+    out[device + "_s_per_conv"] = round((time.perf_counter() - start) / 3, 3)
+print("[real-case] conv3d", json.dumps(out))
+'
+log "memory before the runs: $(sysctl -n vm.swapusage), $(memory_pressure | tail -1)"
 
 # The worker's peak memory is what decides which Macs can run a model; the
 # probe's own rusage does not include its child, so it is sampled here.
