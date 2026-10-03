@@ -11,7 +11,9 @@ import textwrap
 from collections.abc import Iterator
 from pathlib import Path
 
+import numpy as np
 import pytest
+import SimpleITK as sitk
 
 from bcoa_worker import moose_adapter
 
@@ -40,6 +42,18 @@ def fake_site(tmp_path: Path) -> Iterator[Path]:
         """,
     )
     _write(site / "moosez" / "download.py", "import requests\n")
+    _write(
+        site / "moosez" / "image_processing.py",
+        """
+        class ImageResampler:
+            @staticmethod
+            def resample_chunk_SimpleITK(
+                image_chunk, input_spacing_xyz, interpolation_method, output_spacing_xyz,
+                output_size_xyz,
+            ):
+                raise AssertionError("moosez's own block resampler")
+        """,
+    )
     _write(
         site / "requests" / "__init__.py",
         "def get(*a, **k):\n    raise AssertionError('network used')\n",
@@ -143,6 +157,61 @@ def test_harden_takes_the_network_away(fake_site: Path, resources: Path) -> None
         moosez.models.requests.get("https://example.org/x/clin_ct_cardiac.zip", stream=True)
     with pytest.raises(moose_adapter.ModelNotInBundleError):
         moosez.download.requests.get("https://example.org/data.zip")
+
+
+def _moose_block(block: sitk.Image, size: list[int], spacing: tuple[float, ...]) -> np.ndarray:
+    # moosez 3.2.2's resample_chunk_SimpleITK: whatever lies beyond the block
+    # becomes the default value, 0.
+    resampled = sitk.Resample(
+        block,
+        size,
+        sitk.Transform(),
+        sitk.sitkLinear,
+        block.GetOrigin(),
+        spacing,
+        block.GetDirection(),
+        0.0,
+        block.GetPixelIDValue(),
+    )
+    return sitk.GetArrayFromImage(resampled)
+
+
+def test_a_block_edge_is_not_a_plane_of_water() -> None:
+    # Four slices of 2.5 mm of lung become round(10 / 1.5) = 7 slices of
+    # 1.5 mm; the seventh, at 9 mm, lies beyond the last input slice at 7.5.
+    lung = np.full((4, 3, 3), -800.0, dtype=np.float32)
+    block = sitk.GetImageFromArray(lung)
+    block.SetSpacing((1.5, 1.5, 2.5))
+    size, spacing = [3, 3, 7], (1.5, 1.5, 1.5)
+
+    assert np.all(_moose_block(block, size, spacing)[-1] == 0.0)
+    ours = moose_adapter.resample_block(lung, (1.5, 1.5, 2.5), sitk.sitkLinear, spacing, size)
+    assert np.allclose(ours, -800.0)
+    # Inside the block nothing changes.
+    assert np.array_equal(ours[:-1], _moose_block(block, size, spacing)[:-1])
+
+
+def test_harden_replaces_the_block_resampler(fake_site: Path, resources: Path) -> None:
+    moose_adapter.harden(resources)
+    moose_adapter.harden(resources)
+    import moosez.image_processing
+
+    resampler = moosez.image_processing.ImageResampler
+    assert resampler.resample_chunk_SimpleITK is moose_adapter.resample_block
+
+
+def test_a_block_resampler_of_another_shape_is_refused(fake_site: Path, resources: Path) -> None:
+    _write(
+        fake_site / "moosez" / "image_processing.py",
+        """
+        class ImageResampler:
+            @staticmethod
+            def resample_chunk_SimpleITK(image_chunk, spacing, method, size):
+                pass
+        """,
+    )
+    with pytest.raises(moose_adapter.UnsupportedMooseVersionError, match="resamples blocks"):
+        moose_adapter.harden(resources)
 
 
 def test_moose_never_copies_the_trainer(fake_site: Path, resources: Path) -> None:
@@ -272,12 +341,16 @@ def test_dependencies_come_first_and_once() -> None:
     ) == ["clin_ct_organs", "clin_ct_fast_vertebrae", "clin_ct_body_composition"]
 
 
-def _fake_moose(site: Path, labels: str) -> None:
+def _fake_moose(site: Path, labels: str, grid_shift: float = 0.0) -> None:
     # moosez 3.2.2's Model.__get_organ_indices, verbatim: background is
-    # dropped by comparing with the string "0".
+    # dropped by comparing with the string "0". The labelmap marks what the
+    # model saw as bright, on the grid of what it was given.
     _write(
         site / "moosez" / "moosez.py",
         f"""
+        import numpy as np
+        import SimpleITK as sitk
+        SEEN = []
         class _Model:
             def __init__(self, labels):
                 self.dataset = {{"labels": labels}}
@@ -285,9 +358,37 @@ def _fake_moose(site: Path, labels: str) -> None:
                     int(value): key for key, value in labels.items() if value != "0"
                 }}
         def moose(input_path, models, out_dir, accelerator):
-            return [out_dir + "/labels.nii.gz"], [_Model({labels})]
+            image = sitk.ReadImage(input_path)
+            voxels = sitk.GetArrayFromImage(image)
+            SEEN.append(voxels)
+            labelmap = sitk.GetImageFromArray((voxels > 100).astype(np.uint8))
+            labelmap.CopyInformation(image)
+            origin = image.GetOrigin()
+            labelmap.SetOrigin((origin[0] + {grid_shift}, origin[1], origin[2]))
+            path = out_dir + "/labels.nii.gz"
+            sitk.WriteImage(labelmap, path)
+            return [path], [_Model({labels})]
         """,
     )
+
+
+# The shape the bundled dcm2niix writes for an axial CT: the first image axis
+# runs to the patient's left, the second to the front (LAS).
+LAS = (1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0)
+LABELS = '{"background": "0", "lung_upper_lobe_left": "1"}'
+
+
+def _ct(path: Path) -> np.ndarray:
+    """A small CT, bright only near the start of the first image axis."""
+    voxels = np.full((3, 4, 5), -1000, dtype=np.int16)  # (z, y, x)
+    voxels[:, 1:3, 0:2] = 300
+    image = sitk.GetImageFromArray(voxels)
+    image.SetSpacing((0.8, 0.8, 2.5))
+    image.SetOrigin((-120.0, 95.0, -400.0))
+    image.SetDirection(LAS)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sitk.WriteImage(image, str(path))
+    return voxels
 
 
 @pytest.mark.parametrize(
@@ -300,7 +401,65 @@ def _fake_moose(site: Path, labels: str) -> None:
 )
 def test_background_is_never_a_label(fake_site: Path, tmp_path: Path, labels: str) -> None:
     _fake_moose(fake_site, labels)
+    _ct(tmp_path / "work" / "ct.nii.gz")
     _, found = moose_adapter.segment(
-        tmp_path / "ct.nii.gz", "clin_ct_lungs", tmp_path / "out", "cpu"
+        tmp_path / "work" / "ct.nii.gz", "clin_ct_lungs", tmp_path / "out", "cpu"
     )
     assert found == {1: "lung_upper_lobe_left", 6: "trachea"}
+
+
+@pytest.mark.parametrize(
+    ("direction", "axis"),
+    [
+        ((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0), 0),  # LPS, ITK's own
+        (LAS, 0),
+        ((-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0), 0),  # RAS
+        # A sagittal stack: the slices follow each other from right to left.
+        ((0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0), 2),
+        # Tilted 20 degrees about the long axis.
+        ((0.94, -0.34, 0.0, 0.34, 0.94, 0.0, 0.0, 0.0, 1.0), 0),
+    ],
+)
+def test_the_left_right_axis_follows_the_direction(direction: tuple[float, ...], axis: int) -> None:
+    assert moose_adapter.left_right_axis(direction) == axis
+
+
+def test_the_lungs_model_sees_the_ct_mirrored(fake_site: Path, tmp_path: Path) -> None:
+    _fake_moose(fake_site, LABELS)
+    voxels = _ct(tmp_path / "work" / "ct.nii.gz")
+    labelmap, _ = moose_adapter.segment(
+        tmp_path / "work" / "ct.nii.gz", "clin_ct_lungs", tmp_path / "out", "cpu"
+    )
+    import moosez.moosez
+
+    (seen,) = moosez.moosez.SEEN
+    assert np.array_equal(seen, voxels[:, :, ::-1])
+    # Mirrored back, the labelmap covers what is bright in the CT itself.
+    result = sitk.ReadImage(str(labelmap))
+    assert np.array_equal(sitk.GetArrayFromImage(result), (voxels > 100).astype(np.uint8))
+    assert result.GetDirection() == pytest.approx(LAS)
+    assert not (tmp_path / "out_mirrored").exists()
+    assert (tmp_path / "work" / "ct.nii.gz").is_file()
+
+
+def test_other_models_see_the_ct_as_it_is(fake_site: Path, tmp_path: Path) -> None:
+    _fake_moose(fake_site, LABELS)
+    voxels = _ct(tmp_path / "work" / "ct.nii.gz")
+    labelmap, _ = moose_adapter.segment(
+        tmp_path / "work" / "ct.nii.gz", "clin_ct_organs", tmp_path / "out", "cpu"
+    )
+    import moosez.moosez
+
+    (seen,) = moosez.moosez.SEEN
+    assert np.array_equal(seen, voxels)
+    result = sitk.GetArrayFromImage(sitk.ReadImage(str(labelmap)))
+    assert np.array_equal(result, (voxels > 100).astype(np.uint8))
+
+
+def test_a_labelmap_off_the_ct_grid_is_not_mirrored_back(fake_site: Path, tmp_path: Path) -> None:
+    _fake_moose(fake_site, LABELS, grid_shift=0.8)
+    _ct(tmp_path / "work" / "ct.nii.gz")
+    with pytest.raises(moose_adapter.AdapterError, match="grid"):
+        moose_adapter.segment(
+            tmp_path / "work" / "ct.nii.gz", "clin_ct_lungs", tmp_path / "out", "cpu"
+        )
