@@ -20,6 +20,9 @@ versions. Minimum device: M1 with 16 GB (plan §16).
 | clin_ct_organs | same | CPU, same runner and sandbox | not finished after 68 min | – | 2026-10-02, same |
 | clin_ct_organs | 512×512×64 slab of it | MPS, same | 479 s | 2.36 GB | 2026-10-03, same as the 1 945 s run |
 | clin_ct_organs | same slab | CPU, same | not finished after 34 min | 4.42 GB so far | same |
+| clin_ct_organs | the whole real case | MPS, same | 2 163 s | 2.88 GB RSS, **8.47 GB footprint**, 783 MB swapped | 2026-10-03, a third runner of the type |
+| clin_ct_organs | 192×192×64 abdominal block of it | MPS, same | 74 s | 1.15 GB RSS, 5.01 GB footprint | same |
+| clin_ct_organs | same block | CPU, same | 926 s | 4.50 GB RSS, 15.0 GB footprint, 3.26 GB swapped | same |
 | clin_ct_organs | the real case | CPU, 4 cores, as the app runs it | 753 s | 7.74 GB | 2026-10-02, Linux build container (below) |
 | clin_ct_lungs | same | same | 728 s | 5.70 GB | same |
 | clin_ct_digestive | same | same | 5 339 s | 5.81 GB | same; eight passes per window, see "Test-time mirroring" |
@@ -39,13 +42,44 @@ and digestive runs came before it). Peak RSS is the worker's high-water mark
 from `/proc`. All ten models one after another: 10 709 s, just under three
 hours, half of it the digestive model.
 
-On the Mac, RSS leaves out what Metal allocates for MPS (inferred: the same
-model peaks at 2.9–3.8 GB on MPS and 7.7 GB on a CPU), so it understates
-what a Mac needs; the real-case job also samples `top`'s footprint, which
-counts it. The two MPS runs of the same job on the same runner type differ
-fivefold, and the slow one swapped: a hosted runner shares its host, so a
-time from CI is an upper bound, not the app's speed. The minimum device
-(an M1 with 16 GB) still has to be measured.
+On the Mac, RSS leaves out what Metal allocates for MPS, so it understates
+what a Mac needs; `top`'s footprint counts it, and also what was compressed
+or swapped out. The organ model on the whole CT needs about 8.5 GB on MPS by
+that measure, which a 16 GB Mac has room for. The three MPS runs of the same
+job on the same runner type took 395, 1 945 and 2 163 s, and the slow ones
+swapped: a hosted runner shares its host, so a time from CI is an upper
+bound, not the app's speed. The minimum device (an M1 with 16 GB) still has
+to be measured.
+
+### MPS, the Mac's CPU and the Linux CPU give the same labelmap
+
+On the abdominal block, the organ model's labelmap on MPS and on the Mac's
+CPU is **identical**: Dice 1.0 and the same volume for all 19 labels. On the
+whole CT, the MPS labelmap from the Mac and the CPU labelmap from Linux have
+the same number of voxels in every one of the 19 labels (3 182 500 labelled
+voxels, no label differs by one; the Mac's labelmap stays on the runner, so
+this compares counts, not positions). The device does not change the
+result; it changes only the time.
+
+### Why the Mac's CPU is that slow
+
+One convolution of the organ model's first-stage size (32 to 32 channels,
+3×3×3, on 224×96×96), timed with the bundled torch:
+
+| where | oneDNN | threads | per convolution |
+|---|---|---|---|
+| M2 Pro runner, MPS | – | – | 1.73 s |
+| M2 Pro runner, CPU | not in the macOS arm64 wheel | 3 | 87.6 s |
+| Linux Xeon, CPU | yes | 4 | 0.32 s |
+| Linux Xeon, CPU, oneDNN switched off | no | 4 | 3.7 s |
+
+torch's macOS arm64 wheel has no oneDNN, so a 3D convolution on the CPU
+takes torch's generic path, which unfolds the input into a buffer 27 times
+its size: 7.1 GB for this one convolution. The 15 GB footprint of the CPU
+run on the block fits that (inferred, not traced). On a 14 GB runner that
+swaps, and the CPU is 50 times slower than MPS. Falling
+back to the CPU on a Mac is therefore a last resort for a small image, not
+a way to finish a whole CT (OPEN_QUESTIONS #15).
 
 ## The real case
 
@@ -87,7 +121,7 @@ disagree, one case cannot say which is right. The voxels only
 TotalSegmentator calls bladder average 240 HU (95th percentile 377), MOOSE's
 bladder 13 HU, which is urine; the stomach voxels only TotalSegmentator
 includes average 92 HU. This is what local validation before a study is for
-(plan §14); the app shows both numbers only if both models run, and v1 runs
+(plan §16); the app shows both numbers only if both models run, and v1 runs
 MOOSE alone.
 
 PET, checked outside the app (SUV is phase 2): the organ labelmap resampled
