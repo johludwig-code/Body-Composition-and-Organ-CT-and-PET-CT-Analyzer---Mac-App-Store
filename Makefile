@@ -19,7 +19,8 @@ test: test-worker test-swift
 
 test-worker:
 	cd Worker && uv run --no-project --with pytest --with jsonschema --with numpy --with ruff \
-	  --with urllib3==2.8.0 --with matplotlib==3.11.2 --with SimpleITK==2.5.6 --python 3.12 \
+	  --with urllib3==2.8.0 --with matplotlib==3.11.2 --with SimpleITK==2.5.6 \
+	  --with xlsxwriter==3.2.9 --with openpyxl --with pandas==3.0.6 --python 3.12 \
 	  bash -c 'ruff check . && ruff format --check . && pytest -q'
 	uv run --no-project --with pytest --with ruff --python 3.12 \
 	  bash -c 'ruff check --config Worker/pyproject.toml Scripts && pytest -q Scripts/tests'

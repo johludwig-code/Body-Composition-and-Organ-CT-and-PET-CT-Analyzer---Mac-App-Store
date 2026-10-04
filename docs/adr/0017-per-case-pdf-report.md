@@ -552,7 +552,7 @@ them through OPEN_QUESTIONS:
   is the one exception (section 8);
 - item 12, cite the dataset paper (Ferrara et al., Sci Data 2026), as MOOSE
   now asks, also on the app's About page and in the export's methods text. The
-  one methods sentence, used alike in PLAN §11 and in the export code, is:
+  first methods sentence, used alike in PLAN §11 and in the export code, is:
   "Segmentations were generated with MOOSE v\<version> (Shiyam Sundar et al.,
   J Nucl Med 2022; Ferrara et al., Sci Data 2026), based on nnU-Net (Isensee
   et al., Nat Methods 2021), using \<AppName> v\<version> on \<chip> (PyTorch

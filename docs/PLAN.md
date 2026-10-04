@@ -424,7 +424,9 @@ P0002,2,M,…,0,…,ok,…,…
 
 **Methodentext (Vorlage im Blatt `provenance`, mit BibTeX)**
 
-„Segmentations were generated with MOOSE v\<version> (Shiyam Sundar et al., J Nucl Med 2022; Ferrara et al., Sci Data 2026), based on nnU-Net (Isensee et al., Nat Methods 2021), using \<AppName> v\<version> on \<chip> (PyTorch \<device>). Results underwent visual quality control; \<n> series were excluded.“
+„Segmentations were generated with MOOSE v\<version> (Shiyam Sundar et al., J Nucl Med 2022; Ferrara et al., Sci Data 2026), based on nnU-Net (Isensee et al., Nat Methods 2021), using \<AppName> v\<version> on \<chip> (PyTorch \<device>). Two corrections to MOOSE were applied at run time: the lungs model received the CT mirrored left to right and its result was mirrored back, and resampled slices at the edges of MOOSE's resampling blocks were filled from the nearest slice instead of 0 HU. Results can therefore differ from those of MOOSE run on its own. Results underwent visual quality control; \<n> series were excluded.“
+
+Der QC-Satz steht nur so da, wenn jede segmentierte Serie eine QC-Entscheidung hat; sonst heißt er „\<k> of \<N> series underwent visual quality control; …“ oder „No visual quality control was recorded for these results.“ (ADR 0013). Der Satz zu den Korrekturen nennt die des Adapters (ADR 0018); ist kein gespiegeltes Modell wie das Lungenmodell im Export, heißt er „One correction to MOOSE was applied at run time: resampled slices … instead of 0 HU.“ Ein Test hält den Text des Exports gleich dieser Vorlage.
 
 ## 12. Qualitätskontrolle, Provenienz und Reproduzierbarkeit
 

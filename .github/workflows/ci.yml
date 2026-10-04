@@ -10,14 +10,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      # The Makefile holds the one list of test dependencies. A second copy
+      # here drifted: CI lacked urllib3 and matplotlib, so two guard tests
+      # (ADR 0016) skipped in CI and ran only on a developer's machine.
       - name: Worker and script tests
-        run: |
-          cd Worker
-          uv run --no-project --python 3.12 --with pytest --with jsonschema --with numpy --with SimpleITK==2.5.6 --with ruff \
-            bash -c 'ruff check . && ruff format --check . && pytest -q'
-          cd ..
-          uv run --no-project --python 3.12 --with pytest --with ruff \
-            bash -c 'ruff check --config Worker/pyproject.toml Scripts && pytest -q Scripts/tests'
+        run: make test-worker
 
   swift:
     runs-on: macos-15
