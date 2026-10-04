@@ -27,7 +27,7 @@ import traceback
 from typing import Any
 
 # Programs the worker may start, by absolute path. None yet: dcm2niix joins
-# with the conversion job (milestone M2).
+# with the conversion job (milestone M3).
 ALLOWED_PROGRAMS: frozenset[str] = frozenset()
 
 _NETWORK_FAMILIES = {socket.AF_INET, socket.AF_INET6}

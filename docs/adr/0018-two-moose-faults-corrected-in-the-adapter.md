@@ -72,8 +72,9 @@ chunking; and every other model's orientation.
 - The app's numbers for a CT differ from MOOSE's own for the same CT: the
   lungs model's everywhere, every other model's within a window of a block
   edge. The
-  methods text of the export must say so; it is written by the export job
-  (PR #2), which gets that sentence when both changes are on main.
+  methods text of the export says so: since PR #2 met PR #3 it names the
+  corrections it applied (both when the lungs model is in the export), held
+  to PLAN §11 by a test.
 - The corrections are tied to moosez 3.2.2 and to the pinned weights
   (`manifest.json`, by checksum). A new moosez version, or new lungs
   weights, means measuring both faults again and dropping a correction that

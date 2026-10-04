@@ -34,7 +34,7 @@ hook refuses, with `PermissionError`:
 - starting any program (`subprocess`, `os.posix_spawn`, `os.exec*`,
   `os.spawn*`, `os.system`, `os.fork`), except those in
   `guard.ALLOWED_PROGRAMS`, which is empty until the conversion job brings
-  the bundled dcm2niix (M2).
+  the bundled dcm2niix (M3).
 
 `PermissionError` is an `OSError`, which urllib3 and matplotlib already
 expect from a missing network or a missing program: urllib3 then reports no

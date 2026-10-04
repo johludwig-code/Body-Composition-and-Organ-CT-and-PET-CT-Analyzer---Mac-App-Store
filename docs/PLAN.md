@@ -77,7 +77,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | Oberfläche | SwiftUI, AppKit wo nötig (NSOpenPanel, CALayer) | nativ, Sandbox-freundlich, kein Web-Stack | Electron, Qt |
 | Inferenz | `moosez` als Python-Bibliothek, exakt gepinnt | identisch zur publizierten Methode | eigene nnU-Net-Pipeline; Core ML erst in Phase 3 prüfen |
-| Python | eingebettete, relokierbare CPython 3.12 (python-build-standalone oder BeeWare-Support-Paket, Entscheidung in Spike S3) | kein System-Python nötig; `multiprocessing` und Dask laufen unverändert | PyInstaller-Freeze, conda |
+| Python | eingebettete, relokierbare CPython 3.12 (python-build-standalone oder BeeWare-Support-Paket, Entscheidung in Spike S3) | kein System-Python nötig; Dask läuft unverändert; Pools, Queues und Locks von `multiprocessing` scheitern in der Sandbox (ADR 0015) | PyInstaller-Freeze, conda |
 | Prozessmodell | frischer Worker-Prozess pro Job | Absturzisolation, Speicher wird nach jedem Job frei, Abbruch per Signal | Interpreter im App-Prozess |
 | IPC | JSON Lines über stdout des Workers, Logs in eine Datei | einfach, testbar, sprachneutral | XPC (später möglich) |
 | Persistenz | SQLite mit GRDB.swift (MIT) | offenes Schema, Migrationen, extern lesbar | SwiftData; NSDocument (Safe-Save würde GB-große Ordner kopieren) |
@@ -122,14 +122,14 @@ AtlasQuant.app/Contents/
 
 - Start im isolierten Modus (`-I`) mit `PYTHONNOUSERSITE=1` und `PYTHONDONTWRITEBYTECODE=1`, denn das signierte Bundle ist schreibgeschützt.
 - `PYTORCH_ENABLE_MPS_FALLBACK=1`; `MPLCONFIGDIR`, `TMPDIR` und Torch-Cache zeigen in den App-Container.
-- Kein PyInstaller: Das echte eingebettete Python sorgt dafür, dass `multiprocessing` (spawn) und Dask unverändert funktionieren.
+- Kein PyInstaller: Mit dem echten eingebetteten Python laufen MOOSE, nnU-Net und Dask aus ihren veröffentlichten Paketen, auf der Platte unverändert; was der Adapter zur Laufzeit ändert, steht in ADR 0011, 0015 und 0018. Pools, Queues und Locks von `multiprocessing` scheitern in der Sandbox, weil sie POSIX-Semaphoren brauchen; der Adapter lässt nnU-Nets Export deshalb ohne Pool im aufrufenden Thread des Workers laufen (ADR 0015).
 
 **MOOSE-Adapter (`aq_backend/moose_adapter.py`)**
 
 - Spike S1 klärt: Wo sucht `moosez` die Modelle, wann lädt es nach, welche Netzwerkzugriffe gibt es, wie heißen die Ausgabedateien, und liegen sie im Raum des Eingangsbildes?
 - Reihenfolge der Mittel: öffentliche API und Umgebungsvariablen, dann Laufzeit-Patch im Adapter, eine Änderung der Quelle nur im Notfall und dann gekennzeichnet (Apache-2.0).
 - Versucht `moosez` trotzdem einen Download, bricht der Adapter mit „Model not found in app bundle“ ab, statt still zu scheitern.
-- Zwei Fehler von `moosez` 3.2.2, die still falsche Zahlen liefern, korrigiert der Adapter: das seitenverkehrte Lungenmodell und die Wasserschichten an den Blockgrenzen des Resamplings (ADR 0018). Der Methodentext des Exports nennt beide.
+- Zwei Fehler von `moosez` 3.2.2, die still falsche Zahlen liefern, korrigiert der Adapter: das seitenverkehrte Lungenmodell und die Wasserschichten an den Blockgrenzen des Resamplings (ADR 0018). Der Methodentext des Exports nennt die Korrekturen, die er angewendet hat: beide, wenn das Lungenmodell im Export ist, sonst nur die an den Blockgrenzen (§11).
 - Die Bibliotheks-API `moose(input, model_names, output_dir, accelerator)` akzeptiert NIfTI-Pfade und SimpleITK-Bilder und unterstützt `"mps"` ([MOOSE README](https://github.com/ENHANCE-PET/MOOSE)).
 
 **Option für später:** Apple-gehostete Background Assets (ab macOS 26) könnten die Modelle als Asset-Pack ausliefern und App-Updates verkleinern ([App Store Connect](https://developer.apple.com/help/app-store-connect/manage-asset-packs/overview-of-apple-hosted-asset-packs)). Nur einführen, wenn der Download für Nutzer ein einziger Schritt bleibt; in M7 prüfen.
@@ -518,7 +518,7 @@ Quellen: [MOOSE-Repository und MODEL\_LICENSE](https://github.com/ENHANCE-PET/MO
 
 - `scripts/license_report.py` erzeugt `THIRD_PARTY_NOTICES.md` aus den Paket-Metadaten und prüft alle gebündelten `.so`- und `.dylib`-Dateien.
 - Whitelist-Prinzip: GPL oder AGPL lässt den Build scheitern. LGPL oder eine unbekannte Lizenz braucht eine Freigabe per ADR. Schwaches Copyleft wie MPL-2.0 (z. B. certifi) ist zulässig, braucht aber einen Quellenhinweis.
-- In der App: „About & Licenses“ mit allen Texten und der Modell-Attribution sowie „How to Cite“ mit Literatur (MOOSE, nnU-Net, ENHANCE.PET-Datensatz), BibTeX und Methodentext.
+- In der App: „About & Licenses“ mit allen Texten und der Modell-Attribution sowie „How to Cite“ mit Literatur (MOOSE, ENHANCE.PET-Datensatz, nnU-Net, in der Reihenfolge von Export und Fallbericht), BibTeX und Methodentext.
 - Der Fallbericht druckt auf seiner letzten Seite unter „References“ die drei Arbeiten, die MOOSE zu zitieren bittet, MOOSE mit Version, Quelle und Lizenzen und die CC-BY-Namensnennung der Gewichte mit dem Hinweis auf die Checkpoint-Bereinigung. Er heißt nie „MOOSE-Bericht“ (ADR 0017).
 - Name und Icon ohne „MOOSE“ (Apple 4.1(c), Apache-2.0 Abschnitt 6); „Based on MOOSE“ in der Beschreibung ist zulässig.
 - Früh Kontakt zu den MOOSE-Autor:innen aufnehmen: Das ist höflich, eröffnet Kooperationen, und sie bieten selbst eine kommerzielle Version an.

@@ -36,7 +36,9 @@ runs ad-hoc signed with the hardened runtime off because WeasyPrint needs
    the bundle.*
 6. `PrivacyInfo.xcprivacy` declares no tracking, no collected data, and the
    required-reason APIs the app uses (file timestamps, disk space, user
-   defaults).
+   defaults, and system boot time: the interpreter's monotonic clock,
+   `mach_absolute_time`, used for heartbeats and durations only). `make
+   verify` fails on any category the bundle imports that the manifest misses.
 7. Nothing runs after quit: the worker supervisor sends SIGTERM to every worker
    in `applicationWillTerminate`, waits up to 10 s, then SIGKILL.
 

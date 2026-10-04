@@ -11,7 +11,7 @@
 # densities only. The same series was segmented on Linux in the cloud, so the
 # numbers can be compared across platforms (docs/benchmarks.md).
 #
-# The app does not import DICOM yet (M2), so dcm2niix runs here, outside the
+# The app has no conversion job yet (M3), so dcm2niix runs here, outside the
 # sandbox; the copy in build/runtime is the same binary the app carries, but
 # unsigned, because the signed one has the inherit entitlement and the kernel
 # stops it unless a sandboxed parent starts it.

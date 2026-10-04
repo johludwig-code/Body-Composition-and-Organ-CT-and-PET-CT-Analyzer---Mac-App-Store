@@ -117,7 +117,7 @@ BIBTEX = """@article{shiyamsundar2022moose,
 MODEL_ATTRIBUTION = (
     "Segmentation model weights: MOOSE (ENHANCE.PET), licensed under CC BY 4.0, "
     "https://creativecommons.org/licenses/by/4.0/. Changes: optimizer state and training "
-    "artefacts were removed from the checkpoints; the network weights are unchanged. "
+    "artifacts were removed from the checkpoints; the network weights are unchanged. "
     "MOOSE software: Apache-2.0."
 )
 
@@ -710,7 +710,7 @@ class _Builder:
                 Column("label", "text", "", "label name, sanitised"),
                 Column("display_name", "text", "", "label name as shown in the app"),
                 Column("region", "text", "", "part of the scan the label is measured in"),
-                Column("color", "text", "", "overlay colour in the app"),
+                Column("color", "text", "", "overlay color in the app"),
                 Column("model_sha256", "text", "", "SHA-256 of the model archive"),
             ],
         )
