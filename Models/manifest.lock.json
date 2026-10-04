@@ -1,8 +1,48 @@
 {
  "models": {
+  "clin_ct_body": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_body_27112023.zip",
+   "zip_sha256": "34d071970326ed51e90b989c72167851c1445f7404b0dec5da50a3c3d5094574"
+  },
+  "clin_ct_body_composition": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_body_composition_05092024.zip",
+   "zip_sha256": "a671fdf840ba986bd23a4a1a4caf67a3cf1b2641a8b79327f29fae66a22adcc4"
+  },
+  "clin_ct_cardiac": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_cardiac_ras_21052025.zip",
+   "zip_sha256": "be368e2086a24aada06da2aa870326bcab4f879f0acad105ab00bf4bf71a0704"
+  },
+  "clin_ct_digestive": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_digestive_06102024.zip",
+   "zip_sha256": "42f2f725115efc0c1f7da0de564177e6a42a7e2fce2c4dd7a0dbbddcee9ad3ab"
+  },
+  "clin_ct_fast_vertebrae": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_vertebrae3_10092024.zip",
+   "zip_sha256": "c7de5400125641ec9139454070e1bae0e035761d4e00fb7bc4165075f81ebe8c"
+  },
+  "clin_ct_lungs": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_lungs_24062023.zip",
+   "zip_sha256": "4d1c2dabd115747bda46578281379b99af83a7de543d6cb9c22602403f31dbcd"
+  },
+  "clin_ct_muscles": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_muscles_ras_21052025.zip",
+   "zip_sha256": "88b8cba740c6c6af777cef18525679065c7ce53fd427938569089bb54c406fc7"
+  },
   "clin_ct_organs": {
    "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_organs_ras_07052025.zip",
    "zip_sha256": "88415522713aa4aabf81d47baba2f7e0aad3d10911ebdc4efd2c70ded8c5cdcd"
+  },
+  "clin_ct_peripheral_bones": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_peripheral_bones_ras_07052025.zip",
+   "zip_sha256": "c7548eed2c95b2a1e794cc52d30494e6f0dde1c60a93e216b2f8bf4c01f02269"
+  },
+  "clin_ct_ribs": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_ribs_ras_08052025.zip",
+   "zip_sha256": "b2483ce169adaf4c9b3f0db6148074b09738968ad3fc66f350a2d9b8d256fb58"
+  },
+  "clin_ct_vertebrae": {
+   "url": "https://github.com/ENHANCE-PET/MOOSE/releases/download/moosez-v.3.1.3/clin_ct_vertebrae_ras_21052025.zip",
+   "zip_sha256": "a1ad0e8c74c01e7907f1a5dfd7d3989f6499d1de7a20cfbc6ee1783532107a5e"
   }
  },
  "moosez": "3.2.2"
