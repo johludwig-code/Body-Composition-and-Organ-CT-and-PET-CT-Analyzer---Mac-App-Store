@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import FrameType
 
-from bcoa_worker import __version__
+from bcoa_worker import __version__, guard
 from bcoa_worker.channel import ProtocolChannel
 from bcoa_worker.environment import apply_runtime_environment, scratch_dir
 from bcoa_worker.errors import JobFailure
@@ -136,6 +136,9 @@ def main(argv: list[str]) -> int:
 
     channel = ProtocolChannel.take_over_stdout(job.log_path)
     apply_runtime_environment(job)
+    # After the worker's own setup, which creates folders and nothing else,
+    # and before any job imports torch, MOOSE or nnU-Net (ADR 0016).
+    guard.install()
     signal.signal(signal.SIGTERM, _raise_cancelled)
     return run_job(job, channel, _handlers())
 

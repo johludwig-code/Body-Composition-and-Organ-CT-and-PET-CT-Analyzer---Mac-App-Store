@@ -5,7 +5,10 @@
   Required-reason APIs: file timestamps (incremental re-scan compares
   modification times, §7), disk space (checked before a batch, §8) and
   UserDefaults (last project bookmark). Python's os.stat and shutil.disk_usage
-  in the bundled worker use the same APIs for the same reasons.
+  in the bundled worker use the same APIs for the same reasons. System boot
+  time: the interpreter's monotonic clock is mach_absolute_time, used for
+  heartbeats and durations only; libpython, torch and others import it, and
+  `make verify` fails on any imported category missing here.
 -->
 <plist version="1.0">
 <dict>
@@ -31,6 +34,14 @@
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
 				<string>E174.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>35F9.1</string>
 			</array>
 		</dict>
 		<dict>

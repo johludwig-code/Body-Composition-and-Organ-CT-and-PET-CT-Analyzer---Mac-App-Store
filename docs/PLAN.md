@@ -129,6 +129,7 @@ AtlasQuant.app/Contents/
 - Spike S1 klärt: Wo sucht `moosez` die Modelle, wann lädt es nach, welche Netzwerkzugriffe gibt es, wie heißen die Ausgabedateien, und liegen sie im Raum des Eingangsbildes?
 - Reihenfolge der Mittel: öffentliche API und Umgebungsvariablen, dann Laufzeit-Patch im Adapter, eine Änderung der Quelle nur im Notfall und dann gekennzeichnet (Apache-2.0).
 - Versucht `moosez` trotzdem einen Download, bricht der Adapter mit „Model not found in app bundle“ ab, statt still zu scheitern.
+- Zwei Fehler von `moosez` 3.2.2, die still falsche Zahlen liefern, korrigiert der Adapter: das seitenverkehrte Lungenmodell und die Wasserschichten an den Blockgrenzen des Resamplings (ADR 0018). Der Methodentext des Exports nennt beide.
 - Die Bibliotheks-API `moose(input, model_names, output_dir, accelerator)` akzeptiert NIfTI-Pfade und SimpleITK-Bilder und unterstützt `"mps"` ([MOOSE README](https://github.com/ENHANCE-PET/MOOSE)).
 
 **Option für später:** Apple-gehostete Background Assets (ab macOS 26) könnten die Modelle als Asset-Pack ausliefern und App-Updates verkleinern ([App Store Connect](https://developer.apple.com/help/app-store-connect/manage-asset-packs/overview-of-apple-hosted-asset-packs)). Nur einführen, wenn der Download für Nutzer ein einziger Schritt bleibt; in M7 prüfen.

@@ -40,6 +40,7 @@ PERMISSIVE = {
     "CC0-1.0",
     "0BSD",
     "MIT-0",
+    "BSL-1.0",
     "Apache-2.0 OR BSD-3-Clause",
     "BSD-3-Clause OR Apache-2.0",
 }
@@ -76,6 +77,8 @@ _TEXT_HINTS = [
 ]
 
 # Bundled components that are not Python distributions.
+# These notices ship inside the app, where verify_bundle.py rejects the
+# enterprise scheme's name anywhere; the first macOS build failed on this text.
 STATIC_ENTRIES = """\
 ## CPython 3.12 (python-build-standalone)
 
@@ -83,8 +86,9 @@ Licence: PSF-2.0, with the licences of the libraries it bundles (OpenSSL
 Apache-2.0, SQLite public domain, zlib, libffi MIT, XZ, bzip2, mpdecimal,
 ncurses). Source: https://github.com/astral-sh/python-build-standalone
 
-The file `urllib/parse.py` was modified: the scheme "itms-services" was
-removed from `uses_netloc`, as CPython's `--with-app-store-compliance` does.
+The file `urllib/parse.py` was modified: Apple's enterprise-distribution URL
+scheme was removed from `uses_netloc`, as CPython's
+`--with-app-store-compliance` does.
 
 ## MOOSE model weights
 
@@ -97,6 +101,21 @@ Changes: optimizer state was removed from `checkpoint_final.pth`; the network
 weights are unchanged. `checkpoint_best.pth`, validation predictions and
 training logs were not included. SHA-256 before and after each change are in
 models/manifest.json.
+
+## Libraries inside the package wheels that carry their own terms
+
+- FreeType (in Pillow and matplotlib): used under the FreeType License (FTL),
+  which asks for this credit: portions of this software are copyright
+  © The FreeType Project (www.freetype.org). All rights reserved.
+- libgfortran, libquadmath, libgcc_s (in SciPy and NumPy): GPL-3.0 with the
+  GCC Runtime Library Exception, which allows distributing them with
+  software under any licence.
+- OpenSSL (linked into CPython's libpython for `_ssl` and `_hashlib`):
+  Apache-2.0. The app has no network entitlement and never opens a
+  connection; see docs/OPEN_QUESTIONS.md #12.
+
+Removed from the packages before signing (ADR 0014): TinyCC from blosc2
+(LGPL-2.1), connected-components-3d (LGPL-3.0), python-gdcm, setuptools.
 
 ## GRDB.swift
 
@@ -123,9 +142,13 @@ def classify(dist: metadata.Distribution) -> str:
             if mapped:
                 return mapped
     short = (meta.get("License") or "").strip()
-    if short and len(short) < 80:
+    # Some packages paste the whole licence text into this field
+    # (batchgenerators: "Apache License\n Version 2.0 …"); its first lines
+    # name it, the rest would match every hint at once.
+    first = " ".join(line.strip() for line in short.splitlines()[:2] if line.strip())
+    if first and len(first) < 80:
         for pattern, name in _TEXT_HINTS:
-            if pattern.search(short):
+            if pattern.search(first):
                 return name
     return "UNKNOWN"
 
@@ -155,16 +178,20 @@ def verdict(licence: str, name: str, approvals: dict[str, str]) -> str | None:
         return f"{name}: {licence} needs an approval with ADR in license_approvals.json"
     if licence in PERMISSIVE or licence in WEAK_COPYLEFT:
         return None
-    parts = re.split(r"\s+(?:OR|AND)\s+|[()]", licence)
+    # "Apache-2.0 WITH LLVM-exception" (torch): an exception only grants
+    # more, so the licence it modifies decides.
+    plain = re.sub(r"\s+WITH\s+[A-Za-z0-9.-]+", "", licence)
+    parts = re.split(r"\s+(?:OR|AND)\s+|[()]", plain)
     if all(p.strip() in PERMISSIVE | WEAK_COPYLEFT for p in parts if p.strip()):
         return None
     return f"{name}: licence '{licence}' not recognised; approve it in license_approvals.json"
 
 
-def collect(approvals: dict[str, str]) -> tuple[list[Package], list[str]]:
+def collect(approvals: dict[str, str], site: Path | None = None) -> tuple[list[Package], list[str]]:
     packages: dict[str, Package] = {}
     problems: list[str] = []
-    for dist in metadata.distributions():
+    found = metadata.distributions(path=[str(site)]) if site else metadata.distributions()
+    for dist in found:
         name = dist.metadata.get("Name")
         if not name or name.lower() in packages:
             continue
@@ -201,6 +228,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=ROOT / "build/licenses/THIRD_PARTY_NOTICES.md")
     parser.add_argument("--approvals", type=Path, default=ROOT / "Scripts/license_approvals.json")
+    # Lets the macOS package set be audited from any machine: the wheels for
+    # aarch64-apple-darwin can be unpacked anywhere with `uv pip install
+    # --target`, they just cannot be imported there.
+    parser.add_argument("--site", type=Path, help="site-packages to audit instead of this one")
     args = parser.parse_args()
     approvals = {
         k.lower(): v
@@ -209,7 +240,7 @@ def main() -> int:
         ).items()
         if not k.startswith("_")
     }
-    packages, problems = collect(approvals)
+    packages, problems = collect(approvals, args.site)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render(packages), encoding="utf-8")
     print(f"[licences] {len(packages)} packages -> {args.out}")
