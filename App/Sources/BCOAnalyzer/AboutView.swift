@@ -15,10 +15,10 @@ struct AboutView: View {
             Divider()
             Text("How to Cite").font(.headline)
             Text("""
-                Segmentations are generated with MOOSE (Shiyam Sundar et al., J Nucl Med 2022), \
-                based on nnU-Net (Isensee et al., Nat Methods 2021). MOOSE model weights are \
-                licensed under CC BY 4.0 by their authors; the bundled checkpoints were reduced \
-                to the network weights needed for inference.
+                Segmentations are generated with MOOSE (Shiyam Sundar et al., J Nucl Med 2022; \
+                Ferrara et al., Sci Data 2026), based on nnU-Net (Isensee et al., Nat Methods \
+                2021). MOOSE model weights are licensed under CC BY 4.0 by their authors; the \
+                bundled checkpoints were reduced to the network weights needed for inference.
                 """)
             .textSelection(.enabled)
             Divider()

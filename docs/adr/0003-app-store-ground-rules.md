@@ -1,6 +1,6 @@
 # ADR 0003: One sandboxed, self-contained build for every channel
 
-- Status: accepted
+- Status: accepted; point 5 superseded by [ADR 0017](0017-per-case-pdf-report.md)
 - Date: 2026-10-02
 - Plan section: §2, §15
 
@@ -27,8 +27,13 @@ runs ad-hoc signed with the hardened runtime off because WeasyPrint needs
    allowed in the Store but each one is a question in review.
 4. Everything is in the bundle: CPython, the locked packages, the weights, and
    dcm2niix (which comes as the `dcm2niix` wheel and needs no separate build).
-5. No PDF output in v1. Reports are XLSX/CSV and a methods text; this removes
-   the WeasyPrint/Pango dependency that blocks signing in BOCARTA-MOOSE.
+5. ~~No PDF output in v1. Reports are XLSX/CSV and a methods text; this removes
+   the WeasyPrint/Pango dependency that blocks signing in BOCARTA-MOOSE.~~
+   *Superseded by [ADR 0017](0017-per-case-pdf-report.md) on 2026-10-04: the
+   owner wants an optional per-case PDF report, drawn by code that is already
+   in the signed bundle. The rule behind this point stays: no WeasyPrint, Pango
+   or Cairo, no `DYLD_*` variables, and a PDF only from code that is signed in
+   the bundle.*
 6. `PrivacyInfo.xcprivacy` declares no tracking, no collected data, and the
    required-reason APIs the app uses (file timestamps, disk space, user
    defaults).

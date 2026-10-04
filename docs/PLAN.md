@@ -23,7 +23,7 @@ Du bist Senior-macOS-Entwickler mit Erfahrung in medizinischer Bildverarbeitung.
 3. Serien auswählen: automatischer Vorschlag pro Untersuchung, manuell änderbar.
 4. MOOSE-Modelle wählen (einzeln oder als Preset) und den Batch für alle ausgewählten Patienten starten.
 5. Ergebnisse im Viewer prüfen, Segmentierungen ein- und ausblenden, QC-Status vergeben.
-6. Ergebnisse als Excel exportieren, wahlweise mit einer Zeile pro Patient für die gemeinsame Auswertung vieler Patienten.
+6. Ergebnisse als Excel exportieren, wahlweise mit einer Zeile pro Patient für die gemeinsame Auswertung vieler Patienten; auf Wunsch zusätzlich ein PDF-Fallbericht je Fall mit Kennzahlen und Segmentierungsbildern, immer auf Englisch (ADR 0017).
 
 **Hauptfenster:** Seitenleiste mit *Sources*, *Patients & Series*, *Queue*, *Results & QC* und *Export*. Der Viewer öffnet sich als Detailansicht oder als eigenes Fenster.
 
@@ -84,6 +84,7 @@ flowchart LR
 | Viewer | eigene Schichtdarstellung mit Accelerate/vImage und CALayer | volle Kontrolle über die Orientierung, pixelgenau testbar, kein WebKit | WebView mit NiiVue, VTK |
 | Viewer-Daten | Worker orientiert Volumina kanonisch nach LPS um | keine Orientierungs-Mehrdeutigkeit im Swift-Code | NIfTI-Parsing in Swift |
 | Excel | XlsxWriter (BSD-2) im Worker | ausgereift, schnell bei großen Dateien | Swift-Wrapper um libxlsxwriter |
+| Fallbericht (PDF) | Worker schreibt je Fall eine Inhaltsdatei mit Lader und QC-Logik des Exports; die App zeichnet das PDF mit Core Graphics und Core Text | dieselben Zahlen wie im Export, Bilder aus den Bausteinen des Viewers, keine neue Abhängigkeit; scheitert der Spike, zeichnet matplotlib im Worker (ADR 0017) | WeasyPrint (Pango, Cairo), WebKit/HTML, SwiftUI-`ImageRenderer`, ReportLab, fpdf2 |
 | Xcode-Projekt | XcodeGen (`project.yml`) | diffbar, agentenfreundlich | handgepflegte `.pbxproj` |
 | Python-Pakete | `uv` mit Lockfile inklusive Hashes | reproduzierbare Builds | pip ohne Lockfile |
 
@@ -341,7 +342,7 @@ Die Daten kommen kanonisch in LPS (x zeigt nach links, y nach posterior, z nach 
 | Brain | 80 | 40 |
 | Mediastinum | 350 | 50 |
 
-Jedes Modell hat ein Standardpreset, z. B. Rippen → Bone, Lungen → Lung. Labelnamen zeigt die App lesbar aufbereitet (`kidney_left` → „Kidney left“); Exporte behalten die bereinigten MOOSE-Namen. PET-Fusion folgt in Phase 2, eine 3D-Ansicht in Phase 3.
+Jedes Modell hat ein Standardpreset, z. B. Rippen → Bone, Lungen → Lung. Labelnamen zeigt die App so, wie man sie in einem englischen Befund schreibt („Left kidney“, „L3 vertebra“, „Left iliopsoas“), aus einem Namenskatalog für alle Strukturen aller Modelle, im Viewer, in den Listen und im Fallbericht (ADR 0017). Ein Test lässt den Build scheitern, wenn ein Label eines mitgelieferten Modells keinen Namen hat. Die Spaltennamen im Export behalten die bereinigten MOOSE-Namen, weil sie Zitierschlüssel sind. PET-Fusion folgt in Phase 2, eine 3D-Ansicht in Phase 3.
 
 ## 10. Metriken
 
@@ -383,7 +384,7 @@ Der Export erzeugt eine XLSX-Datei und optional CSV; alle Inhalte sind englisch.
 | QC | abgelehnte ausschließen oder mit Statusspalte einschließen | ausschließen |
 | Kennungen | Pseudonym, PatientID (mit Warnung) oder beides | Pseudonym |
 | Datumsangaben | vollständig (ISO 8601), nur Jahr, Tage seit erster Untersuchung | Tage seit erster Untersuchung |
-| Zusätze | Masken als NIfTI, Methodentext, Reproduzierbarkeits-Paket | Methodentext |
+| Zusätze | Masken als NIfTI, Methodentext, Reproduzierbarkeits-Paket, PDF-Fallbericht je Fall (ADR 0017) | Methodentext |
 
 **Spaltenschema Wide:** `<modell>__<label>__<metrik>[__t<n>]`, z. B. `organs__liver__volume_ml` oder `vertebrae__vertebra_l3__hu_mean__t2`. Je Modell gibt es eine Statusspalte `<modell>__status` mit den Werten ok, failed, excluded oder not\_run. Labelnamen werden bereinigt: Kleinbuchstaben, a–z, 0–9 und Unterstrich.
 
@@ -409,6 +410,8 @@ P0002,2,M,…,0,…,ok,…,…
 | `provenance` | Versionen, Prüfsummen, Gerät, Datum, Run-ID, Einstellungen, Forschungshinweis, Zitierhinweise, CC-BY-Attribution |
 | `skipped` | nicht verarbeitete Serien mit Grund |
 
+**Fallbericht (ADR 0017):** Als Option des Exportauftrags schreibt der Worker je Fall eine Inhaltsdatei `<Pseudonym>_t1_s1.report.json` mit Werten, QC-Status, Hinweisen, Methodentext und Provenienz, aus demselben Lader und derselben QC-Logik wie die Tabelle. Die App zeichnet daraus ein englisches PDF auf A4 unter `exports/`. Der Bericht ergänzt die Tabelle und ersetzt sie nicht; ein Test hält beide gleich. Es entsteht keine neue Auftragsart, das Protokoll bleibt bei Version 1.
+
 **Regeln gegen Excel-Fallen**
 
 - IDs als Textzellen: keine verlorenen führenden Nullen, keine wissenschaftliche Notation.
@@ -420,7 +423,7 @@ P0002,2,M,…,0,…,ok,…,…
 
 **Methodentext (Vorlage im Blatt `provenance`, mit BibTeX)**
 
-„Segmentations were generated with MOOSE v\<version> (Shiyam Sundar et al., J Nucl Med 2022), based on nnU-Net (Isensee et al., Nat Methods 2021), using \<AppName> v\<version> on \<chip> (PyTorch \<device>). Results underwent visual quality control; \<n> series were excluded.“
+„Segmentations were generated with MOOSE v\<version> (Shiyam Sundar et al., J Nucl Med 2022; Ferrara et al., Sci Data 2026), based on nnU-Net (Isensee et al., Nat Methods 2021), using \<AppName> v\<version> on \<chip> (PyTorch \<device>). Results underwent visual quality control; \<n> series were excluded.“
 
 ## 12. Qualitätskontrolle, Provenienz und Reproduzierbarkeit
 
@@ -454,6 +457,8 @@ Jede Serie erhält einen QC-Status, einzelne fehlerhafte Labels lassen sich auss
 
 **Reproduzierbarkeits-Paket:** ZIP mit `provenance.json`, Labeltabellen, Metriken im Long-Format, QC-Tabelle, Export-Einstellungen, Methodentext und Lizenzhinweisen. Es enthält keine Bilder und keine Klartext-Kennungen und eignet sich als Supplement einer Publikation.
 
+**Fallbericht (ADR 0017):** Er zählt wie ein Export: Er sperrt den Lauf, kommt mit Umfang, Ziel und SHA-256 ins Audit-Log und nie ins Reproduzierbarkeits-Paket. Er zeigt den QC-Status, entsteht für abgelehnte Serien nicht und wird neu gezeichnet, wenn sich ein Wert ändert. Ausgeschlossene Labels stehen leer mit Grund; `volume_outlier` erscheint höchstens als Hinweis zur Segmentierung, nie als Wertung.
+
 **Determinismus:** MPS, CPU und CUDA können leicht unterschiedliche Masken liefern. Deshalb wird das Gerät je Ergebnis gespeichert, pro Studie ein Gerät empfohlen und die Äquivalenz getestet (Abschnitt 16).
 
 ## 13. Datenschutz, Sicherheit und regulatorische Einordnung
@@ -469,6 +474,7 @@ Patientendaten verlassen den Mac nie: kein Netzwerk-Entitlement, keine Namen in 
 - Logs, Fehlermeldungen und Prozessargumente enthalten nur interne Schlüssel und Pseudonyme, keine Pfade. Ordnernamen enthalten oft Patientennamen.
 - Keine Telemetrie, keine Analytics, keine eigenen Absturz-Uploads.
 - Empfehlung in der App: Projekte auf FileVault-verschlüsselten Datenträgern ablegen.
+- Fallbericht (ADR 0017): als Kennung nur das Pseudonym, nie eine PatientID; als Voreinstellung Tage seit erster Untersuchung (Jahr als Option, volles Datum nur mit Warnung), Alter in ganzen Jahren und Geschlecht wie erfasst; Dateiname nach festem Muster; PDF-Metadaten ohne Patientenfelder; Ablage unter `exports/`, „Save a Copy…“ mit Warnung bei iCloud-, Netz- oder Wechseldatenträgern; Drucken aus der Vorschau-App, ohne die Berechtigung `com.apple.security.print`; Bilder ohne Gesicht, weder von vorn noch im Profil. Kein Versand an PACS, per Mail oder in die iCloud, kein DICOM-Encapsulated-PDF, kein JavaScript, keine Formulare und keine Anhänge im PDF.
 
 **Sicherheit**
 
@@ -483,6 +489,7 @@ Patientendaten verlassen den Mac nie: kein Netzwerk-Entitlement, keine Namen in 
 - Apple prüft medizinische Apps strenger (1.4.1) und erwartet bei Gesundheits-Apps die Einreichung durch eine juristische Person (5.1.1(ix)). Dafür braucht es den Developer-Account der Institution.
 - Ethikvotum und Datenschutzfreigabe für retrospektive Daten verantwortet die Studienleitung. Die App liefert die Dokumentation dafür: Provenienz, Audit-Log, Pseudonymisierung.
 - Keine Genauigkeitsversprechen in App-Store-Text oder UI ohne eigene Validierung.
+- Ein PDF pro Patient ist die Form, in der Information bei einer Entscheidung über einen Menschen ankommt, und die Zweckbestimmung wird auch aus seinem Inhalt gelesen. Der Fallbericht trägt deshalb auf jeder Seite den Hinweis „For research use only. Not for clinical use. Not a medical device; not for diagnosis or treatment decisions.“, also den Hinweis aus Abschnitt 2, Regel 5, ergänzt um die Abgrenzung zum Medizinprodukt, auf Seite 1 die volle Zweckbestimmung und den Satz, dass er nicht in die Patientenakte gehört. Er enthält keine Normwerte, Perzentilen, z-Werte, Schwellen oder Ampeln, keine Überschriften wie „Findings“, „Impression“ oder „Recommendation“ und kein Unterschriftsfeld (ADR 0017). Bevor Berichte zu echten Fällen entstehen, ordnet die Institution ihn regulatorisch ein (OPEN_QUESTIONS #21).
 
 ## 14. Lizenz-Compliance und Attribution
 
@@ -500,6 +507,7 @@ Nach aktuellem Stand sind alle Komponenten permissiv lizenziert. Pflicht sind Li
 | CPython | PSF-2.0 plus Lizenzen gebündelter Bibliotheken wie OpenSSL | Lizenztexte |
 | XlsxWriter | BSD-2-Clause | Lizenztext |
 | GRDB.swift | MIT | Lizenztext |
+| DejaVu Sans (Schrift des Fallberichts) | Bitstream-Vera-Lizenz, Arev-Glyphen unter der Arev-Lizenz, DejaVu-Änderungen gemeinfrei | `LICENSE_DEJAVU` in den Drittanbieter-Hinweisen (ADR 0017) |
 
 Quellen: [MOOSE-Repository und MODEL\_LICENSE](https://github.com/ENHANCE-PET/MOOSE), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/legalcode). Die übrigen Zeilen sind Erfahrungswerte; maßgeblich ist der automatische Lizenzbericht.
 
@@ -508,6 +516,7 @@ Quellen: [MOOSE-Repository und MODEL\_LICENSE](https://github.com/ENHANCE-PET/MO
 - `scripts/license_report.py` erzeugt `THIRD_PARTY_NOTICES.md` aus den Paket-Metadaten und prüft alle gebündelten `.so`- und `.dylib`-Dateien.
 - Whitelist-Prinzip: GPL oder AGPL lässt den Build scheitern. LGPL oder eine unbekannte Lizenz braucht eine Freigabe per ADR. Schwaches Copyleft wie MPL-2.0 (z. B. certifi) ist zulässig, braucht aber einen Quellenhinweis.
 - In der App: „About & Licenses“ mit allen Texten und der Modell-Attribution sowie „How to Cite“ mit Literatur (MOOSE, nnU-Net, ENHANCE.PET-Datensatz), BibTeX und Methodentext.
+- Der Fallbericht druckt auf seiner letzten Seite unter „References“ die drei Arbeiten, die MOOSE zu zitieren bittet, MOOSE mit Version, Quelle und Lizenzen und die CC-BY-Namensnennung der Gewichte mit dem Hinweis auf die Checkpoint-Bereinigung. Er heißt nie „MOOSE-Bericht“ (ADR 0017).
 - Name und Icon ohne „MOOSE“ (Apple 4.1(c), Apache-2.0 Abschnitt 6); „Based on MOOSE“ in der Beschreibung ist zulässig.
 - Früh Kontakt zu den MOOSE-Autor:innen aufnehmen: Das ist höflich, eröffnet Kooperationen, und sie bieten selbst eine kommerzielle Version an.
 - Hinweis: Dies ist keine Rechtsberatung; vor einer kommerziellen Veröffentlichung juristisch prüfen lassen.
@@ -559,6 +568,7 @@ Getestet wird auf drei Ebenen: Korrektheit des Codes, technische Äquivalenz zu 
 | Sandbox und Offline | signierter Build | Netzwerk- und Dateizugriffe protokollieren | keine Verbindung, keine Schreibzugriffe außerhalb erlaubter Orte |
 | Leistung | Laufzeit je Modell, RAM-Spitze, Scroll-Rate | M1 mit 16 GB als Mindestgerät, größere Macs | Werte in `docs/benchmarks.md` |
 | UI | Import → Lauf → QC → Export | XCUITest | Ablauf ohne Fehler |
+| Fallbericht | Inhaltsdatei und PDF (ADR 0017) | pytest am öffentlichen Fall; Swift Testing auf dem macOS-Runner, PDF per PDFKit zurückgelesen | jede Zahl gleich der Exportzeile; Forschungshinweis auf jeder Seite; jedes Label jedes Modells mit englischem Namen; Text englisch auch bei deutscher Systemsprache |
 
 **Testdaten:** nur synthetische Phantome (per Skript erzeugt) und öffentliche Datensätze mit dokumentierter Lizenz, z. B. TCIA-Sammlungen (Lizenz je Sammlung prüfen). Echte Patientendaten gehören nie ins Repository oder in CI.
 
@@ -591,9 +601,11 @@ Die Umsetzung beginnt mit vier Spikes zu den größten technischen Risiken; Feat
    - Akzeptanz: Golden Files identisch; Grenzen geprüft; Öffnen in Excel, LibreOffice, pandas und R fehlerfrei.
 7. **M6 – QC und Kohorte:** QC-Modus, Auto-Flags, Label-Ausschluss, Kohortenübersicht, Audit-Log, Reproduzierbarkeits-Paket.
    - Akzeptanz: QC-Status wirkt korrekt im Export; Ausreißer werden markiert.
-8. **M7 – Härtung und Pilot:** Datenschutz-Review, finale englische UI-Texte mit einheitlicher Terminologie, VoiceOver-Beschriftungen, Leistung, englisches Nutzerhandbuch, DMG und TestFlight.
+8. **M6b – Fallbericht:** Namenskatalog im String Catalog, Inhaltsdatei aus dem Export, Spike und Zeichnung in der App, QC-Status und Ausschlüsse im Bericht, Menüpunkt „Create Case Report…“ (ADR 0017).
+   - Akzeptanz: Für den öffentlichen Fall zeigen Bericht und Excel dieselben Zahlen und QC-Zustände; Zeit und Größe pro Bericht stehen in `docs/benchmarks.md`. M7 deckt den Bericht mit ab (Datenschutz-Review, VoiceOver, Handbuch).
+9. **M7 – Härtung und Pilot:** Datenschutz-Review, finale englische UI-Texte mit einheitlicher Terminologie, VoiceOver-Beschriftungen, Leistung, englisches Nutzerhandbuch, DMG und TestFlight.
    - Akzeptanz: alle Punkte aus Abschnitt 2 erfüllt; Pilotnutzer:innen schaffen den Workflow ohne Hilfe.
-9. **M8 – Mac App Store (optional):** Einreichung nach der Entscheidung in Abschnitt 19.
+10. **M8 – Mac App Store (optional):** Einreichung nach der Entscheidung in Abschnitt 19.
 
 ## 18. Erweiterungen in Phase 2 und 3
 
@@ -610,6 +622,8 @@ Den größten zusätzlichen Forschungsnutzen bringen Organ-SUV-Werte aus PET/CT 
 | Radiomics (Phase 3) | Texturmerkmale | pyradiomics (BSD-3) mit IBSI-konformen Parametern | multiples Testen |
 | 3D-Ansicht (Phase 3) | Überblick | Metal-Volumenrendering oder Oberflächen | Aufwand |
 | Weitere nnU-Net-Modelle (Phase 3) | Erweiterbarkeit | Modell-Registry mit Lizenzprüfung je Modell | teils nicht-kommerzielle Lizenzen |
+
+Der Fallbericht (ADR 0017) bekommt in Phase 2 je eine Seite: Körperzusammensetzung mit L3-Flächen und SMI, die die Körpergröße braucht, und PET mit SUV je Organ. Welche zuerst kommt, ist OPEN_QUESTIONS #8.
 
 ## 19. Kritische Reflexion: Risiken, Abwägungen, offene Entscheidungen
 
