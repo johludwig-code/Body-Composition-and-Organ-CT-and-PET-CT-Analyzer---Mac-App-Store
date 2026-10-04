@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import inspect
 import json
-from collections.abc import Iterable
+import multiprocessing
+import shutil
+from collections.abc import Iterable, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
@@ -28,6 +31,32 @@ WEIGHTS_SUBDIR = MODELS_SUBDIR / "nnunet_trained_models"
 MANIFEST_NAME = "manifest.json"
 VERSION_FILE = "model_version.json"
 TRAINER_FILE = "MOOSE_custom_trainers.py"
+
+# moosez turns every input to RAS before inference. Every model with left and
+# right labels comes as a 2025 "_ras_" weight set except clin_ct_lungs, which
+# moosez 3.2.2 still downloads with its 2023 weights, and that model sees the
+# RAS image mirrored. On the public PET/CT its two "left" lobes lay in the
+# right lung (Dice 0.00 against the organ model's lobes of the same name, 0.97
+# and 0.98 against the mirrored ones) and the left lung got three lobes, so no
+# renaming could repair it. Fed the CT mirrored, its five lobes match the
+# organ model's (Dice 0.91 to 0.98) and the middle lobe is on the right.
+MIRRORED_MODELS = frozenset({"clin_ct_lungs"})
+
+# moosez resamples to the model's spacing in blocks of at most 150 voxels per
+# axis, each block on its own. The last output slice of a block can fall just
+# beyond the block's last input slice, and SimpleITK fills it with 0: on the
+# public PET/CT (356 slices of 2.5 mm, two blocks of 178) resampled slices 296
+# and 593 were 0 HU everywhere, a plane of water across the whole body. The
+# lungs model lost 93 % of the lung in the two CT slices at the first plane,
+# the organ model's lobes most of it. Filled from the nearest slice instead,
+# those two planes are the only resampled slices that differ from moosez's.
+RESAMPLE_BLOCK_ARGS = (
+    "image_chunk",
+    "input_spacing_xyz",
+    "interpolation_method",
+    "output_spacing_xyz",
+    "output_size_xyz",
+)
 
 
 class AdapterError(RuntimeError):
@@ -61,6 +90,67 @@ class _NoNetwork:
             raise ModelNotInBundleError(f"Model not found in app bundle: {model}")
 
         return refuse
+
+
+class _Finished:
+    """An AsyncResult whose task has already run."""
+
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def ready(self) -> bool:
+        return True
+
+    def get(self, timeout: float | None = None) -> Any:
+        return self._value
+
+
+class _InPlacePool:
+    """A pool without workers: each task runs at once, in the calling thread.
+
+    nnU-Net asks `is_alive()` of every worker in `_pool` and holds back while
+    `not_ready >= len(_pool) + 2`; with no workers and every result ready,
+    neither check ever stops it.
+    """
+
+    def __init__(self, processes: int | None = None) -> None:
+        self._pool: list[Any] = []
+
+    def __enter__(self) -> _InPlacePool:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def apply_async(
+        self, func: Any, args: tuple[Any, ...] = (), kwds: dict[str, Any] | None = None
+    ) -> _Finished:
+        return _Finished(func(*args, **(kwds or {})))
+
+
+class _InPlaceContext:
+    # Capitalised because nnU-Net calls `get_context("spawn").Pool(...)`.
+    @staticmethod
+    def Pool(processes: int | None = None) -> _InPlacePool:
+        return _InPlacePool(processes)
+
+
+class _ExportInPlace:
+    """Stands in for the `multiprocessing` module inside nnU-Net's predictor.
+
+    nnU-Net resamples each predicted chunk in a pool of spawned processes. A
+    pool needs POSIX semaphores, and the App Sandbox refuses `sem_open` for
+    any name outside an app group: the first sandboxed run on Apple Silicon
+    failed there with EPERM (ADR 0015). Every other attribute is the real
+    module's.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(multiprocessing, name)
+
+    @staticmethod
+    def get_context(method: str | None = None) -> _InPlaceContext:
+        return _InPlaceContext()
 
 
 def weights_dir(resources_dir: Path) -> Path:
@@ -154,6 +244,7 @@ def harden(resources_dir: Path) -> None:
     """
     check_moosez_version()
     import moosez.download as moose_download
+    import moosez.image_processing as moose_images
     import moosez.models as moose_models
     import moosez.moosez as moose_main
 
@@ -169,6 +260,28 @@ def harden(resources_dir: Path) -> None:
     moose_models.requests = _NoNetwork()
     moose_download.requests = _NoNetwork()
     moose_main.add_custom_trainers_to_local_nnunetv2 = _trainer_already_installed
+    # The block resampler is looked up on the class for every image, so
+    # replacing it there reaches every model's input.
+    resampler = getattr(moose_images, "ImageResampler", None)
+    block = getattr(resampler, "resample_chunk_SimpleITK", None)
+    if block is None or tuple(inspect.signature(block).parameters) != RESAMPLE_BLOCK_ARGS:
+        raise UnsupportedMooseVersionError("moosez no longer resamples blocks as 3.2.2 does")
+    resampler.resample_chunk_SimpleITK = staticmethod(resample_block)
+
+    import nnunetv2.inference.predict_from_raw_data as nnunet_predict
+
+    current = getattr(nnunet_predict, "multiprocessing", None)
+    if current is not multiprocessing and not isinstance(current, _ExportInPlace):
+        raise AdapterError("nnU-Net's predictor no longer imports multiprocessing as a module")
+    nnunet_predict.multiprocessing = _ExportInPlace()
+
+    # tqdm, for nnU-Net's progress bars, asks for a multiprocessing lock when
+    # the first bar is made. The sandbox refuses it and tqdm carries on with
+    # its thread lock alone; settling that beforehand spares the refusal,
+    # which the CI's sandbox report counts as a failure (ADR 0015).
+    from tqdm.std import TqdmDefaultWriteLock
+
+    TqdmDefaultWriteLock.mp_lock = None
 
 
 def verify_bundled_model(model: str, resources_dir: Path) -> Path:
@@ -190,6 +303,77 @@ def choose_accelerator(requested: str) -> str:
     return "mps" if torch.backends.mps.is_available() else "cpu"
 
 
+def resample_block(
+    image_chunk: Any,
+    input_spacing_xyz: Sequence[float],
+    interpolation_method: int,
+    output_spacing_xyz: Sequence[float],
+    output_size_xyz: Sequence[int],
+) -> Any:
+    """moosez 3.2.2's ImageResampler.resample_chunk_SimpleITK, but an output
+    slice beyond the block takes the nearest slice instead of 0."""
+    import SimpleITK as sitk
+
+    block = sitk.GetImageFromArray(image_chunk)
+    block.SetSpacing(input_spacing_xyz)
+    resampled = sitk.Resample(
+        block,
+        [int(n) for n in output_size_xyz],
+        sitk.Transform(),
+        interpolation_method,
+        block.GetOrigin(),
+        output_spacing_xyz,
+        block.GetDirection(),
+        0.0,
+        block.GetPixelIDValue(),
+        True,
+    )
+    return sitk.GetArrayFromImage(resampled)
+
+
+def left_right_axis(direction: Sequence[float]) -> int:
+    """The image axis that runs closest to the patient's left-right axis.
+
+    `direction` is SimpleITK's row-major 3×3 direction matrix. Its column i is
+    image axis i in LPS coordinates, so the first row holds how far each axis
+    runs from right to left.
+    """
+    return max(range(3), key=lambda axis: abs(direction[axis]))
+
+
+def _mirror(source: Path, target: Path, grid: Any = None) -> Any:
+    """Writes `source` with its voxels reversed from right to left.
+
+    The header stays as it is, so the image claims the same place in the
+    world while its content is the mirror image. Mirroring back is a mirror
+    about the same plane only on the same grid, so with `grid` given an image
+    on any other grid is refused before anything is written. Returns the
+    image as it was read.
+    """
+    import numpy as np
+    import SimpleITK as sitk
+
+    image = sitk.ReadImage(str(source))
+    if grid is not None and not _same_grid(image, grid):
+        raise AdapterError(f"{source.name} is not on the grid of the CT")
+    axis = left_right_axis(image.GetDirection())
+    # SimpleITK's arrays are (z, y, x), the image axes in reverse.
+    voxels = np.flip(sitk.GetArrayFromImage(image), axis=2 - axis)
+    mirrored = sitk.GetImageFromArray(np.ascontiguousarray(voxels))
+    mirrored.CopyInformation(image)
+    sitk.WriteImage(mirrored, str(target))
+    return image
+
+
+def _same_grid(a: Any, b: Any) -> bool:
+    return (
+        a.GetSize() == b.GetSize()
+        and all(abs(x - y) < 1e-4 for x, y in zip(a.GetOrigin(), b.GetOrigin(), strict=True))
+        and all(abs(x - y) < 1e-6 for x, y in zip(a.GetSpacing(), b.GetSpacing(), strict=True))
+        and all(abs(x - y) < 1e-6 for x, y in zip(a.GetDirection(), b.GetDirection(), strict=True))
+    )
+
+
 def segment(
     input_nifti: Path, model: str, out_dir: Path, accelerator: str
 ) -> tuple[Path, dict[int, str]]:
@@ -202,10 +386,31 @@ def segment(
     from moosez import moose
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    outputs, used = moose(str(input_nifti), [model], str(out_dir), accelerator)
+    source = input_nifti
+    original: Any = None
+    mirrored_dir = out_dir.parent / f"{out_dir.name}_mirrored"
+    if model in MIRRORED_MODELS:
+        # Beside out_dir, not in it, and under the CT's own file name: moosez
+        # names its labelmap after the input.
+        mirrored_dir.mkdir(parents=True, exist_ok=True)
+        source = mirrored_dir / input_nifti.name
+        original = _mirror(input_nifti, source)
+    try:
+        outputs, used = moose(str(source), [model], str(out_dir), accelerator)
+    finally:
+        if source != input_nifti:
+            shutil.rmtree(mirrored_dir, ignore_errors=True)
     if len(outputs) != 1:
         raise AdapterError(f"{model}: expected one labelmap, got {len(outputs)}")
-    labels = {int(k): str(v) for k, v in used[0].organ_indices.items()}
+    if source != input_nifti:
+        _mirror(Path(outputs[0]), Path(outputs[0]), grid=original)
+    # MOOSE drops background by comparing each dataset.json value with the
+    # string "0". Nine of the ten clinical models store their labels as
+    # strings; the lungs model (Dataset333_HMS3dlungs) stores integers, so its
+    # background came through as an organ and the export of the real case
+    # carried a 217-litre "lungs / background" row. Label 0 is never a
+    # structure, whatever type the model wrote it as.
+    labels = {int(k): str(v) for k, v in used[0].organ_indices.items() if int(k) != 0}
     return Path(outputs[0]), labels
 
 

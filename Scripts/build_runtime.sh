@@ -88,13 +88,56 @@ if [[ -f "$SITE/moosez/nnUNet_custom_trainer/MOOSE_custom_trainers.py" ]]; then
      "$SITE/nnunetv2/training/nnUNetTrainer/variants/MOOSE_custom_trainers.py"
 fi
 
+# ADR 0014: parts of the locked packages the worker never uses and that a
+# Store app should not carry. The ADR records the inference run on a real CT
+# with all of them blocked:
+# - blosc2 dlopens TinyCC (LGPL-2.1), a C compiler used as a JIT for array
+#   expressions, and falls back to its interpreter when it is missing. A JIT
+#   needs an entitlement the app does not have, and compiling code at run
+#   time is exactly what App Review 2.5.2 looks for.
+# - connected-components-3d (LGPL-3.0) is imported at module level by
+#   acvl_utils' morphology helpers, which nnU-Net imports while looking up the
+#   trainer class but never calls during inference. A stub that fails on any
+#   use takes its place (Scripts/stubs/cc3d).
+# - python-gdcm brings its own OpenSSL; pydicom treats it as optional, and the
+#   app reads DICOM through dcm2niix.
+# - setuptools (vendoring LGPL code) is a build tool; torch lists it only for
+#   compiling C++ extensions.
+log "removing package parts the worker never loads (ADR 0014)"
+rm -f "$SITE"/blosc2/lib/libtcc.*
+rm -rf "$SITE"/blosc2/share/miniexpr "$SITE"/blosc2-*.dist-info/licenses/miniexpr
+rm -rf "$SITE"/cc3d "$SITE"/connected_components_3d-*.dist-info
+# Only the source: a local __pycache__ may come from another Python.
+mkdir "$SITE/cc3d" && cp "$ROOT/Scripts/stubs/cc3d/__init__.py" "$SITE/cc3d/"
+rm -rf "$SITE"/_gdcm "$SITE"/gdcm.py "$SITE"/python_gdcm-*.dist-info
+rm -rf "$SITE"/setuptools "$SITE"/setuptools-*.dist-info "$SITE"/_distutils_hack \
+  "$SITE"/distutils-precedence.pth
+"$PY" -I -c 'import importlib.util as u, sys
+gone = [m for m in ("gdcm", "setuptools") if u.find_spec(m)]
+import cc3d
+stub = "ADR 0014" in (cc3d.__doc__ or "")
+sys.exit(f"still importable: {gone}" if gone else 0 if stub else "cc3d is not the stub")'
+
 # pip and the package installers' own metadata are not needed to run, and a
 # bundle that contains pip invites the question whether it installs code.
 rm -rf "$SITE"/pip "$SITE"/pip-*.dist-info "$PY_DIR"/bin/pip*
 
+# Console scripts: uv writes this machine's interpreter path into each
+# shebang, so in the bundle every one of them is dead, and several
+# (nnUNetv2_download_pretrained_model_by_url, imageio_download_bin, hf) are
+# download tools nobody should have to explain to App Review. The app starts
+# python3 itself, and the dcm2niix binary lives in site-packages/dcm2niix.
+find "$PY_DIR/bin" -mindepth 1 \( -type f -o -type l \) \
+  ! -name python ! -name python3 ! -name 'python3.[0-9]*' -delete
+find "$PY_DIR/bin" -mindepth 1 -name 'python3.[0-9]*-config' -delete
+
 log "stripping tests, headers and static libraries"
 find "$SITE" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} +
 rm -rf "$PY_DIR/include" "$PY_DIR/share"
+# torch's C++ headers (64 MB) are for building extensions, and protoc is a
+# compiler; neither runs in the app. torch_shm_manager stays: `import torch`
+# checks that it exists. verify_bundle.py fails on any other program.
+rm -rf "$SITE/torch/include" "$SITE"/torch/bin/protoc*
 find "$PY_DIR" -name '*.a' -delete
 find "$PY_DIR" -name '__pycache__' -type d -prune -exec rm -rf {} +
 
@@ -109,6 +152,8 @@ log "precompiling"
 log "size report"
 {
   echo "runtime $(du -sh "$PY_DIR" | cut -f1)"
-  du -sh "$SITE"/* 2>/dev/null | sort -rh | head -25
+  # sed rather than head: head exits after 25 lines, sort then dies of
+  # SIGPIPE, and pipefail turned that into a failed build on the macOS runner.
+  du -sh "$SITE"/* 2>/dev/null | sort -rh | sed -n 1,25p
 } | tee "$OUT_DIR/size-report.txt"
 log "done: $PY"

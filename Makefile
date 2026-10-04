@@ -11,12 +11,15 @@ CONFIG ?= Release
 
 .PHONY: all test test-worker test-swift runtime models licenses app sign verify dmg clean
 
-all: runtime models licenses app verify
+all:
+	$(MAKE) runtime
+	$(MAKE) models licenses app verify
 
 test: test-worker test-swift
 
 test-worker:
 	cd Worker && uv run --no-project --with pytest --with jsonschema --with numpy --with ruff \
+	  --with urllib3==2.8.0 --with matplotlib==3.11.2 --with SimpleITK==2.5.6 \
 	  --with xlsxwriter --with openpyxl --with pandas --python 3.12 \
 	  bash -c 'ruff check . && ruff format --check . && pytest -q'
 	uv run --no-project --with pytest --with ruff --python 3.12 \
@@ -26,13 +29,19 @@ test-swift:
 	cd Packages/BCOAKit && swift test
 	cd Packages/BCOAStore && swift test
 
+# `make runtime` always rebuilds. The other targets only need a runtime to
+# exist: as plain prerequisites of a phony target they rebuilt it each time,
+# so `make all` built the whole runtime three times.
 runtime:
 	Scripts/build_runtime.sh
 
-models: runtime
+$(PY):
+	Scripts/build_runtime.sh
+
+models: | $(PY)
 	$(PY) Scripts/fetch_models.py $(MODELS)
 
-licenses: runtime
+licenses: | $(PY)
 	$(PY) Scripts/license_report.py --out build/licenses/THIRD_PARTY_NOTICES.md
 
 app:

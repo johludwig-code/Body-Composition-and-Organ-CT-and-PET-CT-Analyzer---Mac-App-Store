@@ -1,3 +1,4 @@
 {
-  "_comment": "Package name -> ADR that approves a licence the whitelist does not cover. Empty until a build needs one."
+  "_comment": "Package name -> ADR that approves a licence the whitelist does not cover.",
+  "dcm2niix": "ADR 0014: BSD-2-Clause (Chris Rorden) with public-domain, MIT and BSD parts; the wheel's metadata names no licence, its license.txt does"
 }
