@@ -796,10 +796,10 @@ class _Builder:
             )
         else:
             qc = "No visual quality control was recorded for these results."
-        # The first sentence is plan §11's word for word, and the About view
-        # cites the same three works in the same words in the present tense, so
-        # a methods section copied from the export, the plan or the About view
-        # cites the same works.
+        # The text is plan §11's template word for word (a test holds it), and
+        # the About view cites the same three works in the same words in the
+        # present tense, so a methods section copied from the export, the plan
+        # or the About view cites the same works.
         corrections = _corrections_sentence(exported) if exported else ""
         return (
             f"Segmentations were generated with MOOSE v{versions.get('moosez', 'unknown')} "

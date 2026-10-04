@@ -145,3 +145,44 @@ def test_matplotlib_builds_its_font_cache_without_a_program(tmp_path: Path) -> N
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip() == "True"
     assert "socket" not in out.stderr
+
+
+def test_an_export_job_runs_under_the_guard_without_a_refusal(tmp_path: Path) -> None:
+    # The export job came after the guard (PR #2 after ADR 0016) and its tests
+    # call the handler directly, so nothing else shows that XlsxWriter and the
+    # mask copy start no program and open no socket once main() has installed
+    # the hook. On the Mac a refusal here would be a sandbox violation too.
+    import export_project
+
+    project = tmp_path / "Study.bcoaproj"
+    export_project.create(project)
+    mask = project / "work" / "se1" / "labels" / "clin_ct_organs.nii.gz"
+    mask.parent.mkdir(parents=True)
+    mask.write_bytes(b"labelmap")
+    job = {
+        "protocol_version": 1,
+        "job_id": "j_export",
+        "kind": "export",
+        "project_dir": str(project),
+        "log_path": str(project / "logs" / "j_export.log"),
+        "resources_dir": str(tmp_path),
+        "payload": {"run_id": export_project.RUN, "stem": "cohort", "options": {"masks": True}},
+    }
+    job_file = tmp_path / "job.json"
+    job_file.write_text(json.dumps(job))
+    out = _child(
+        f"""
+        import sys
+        import bcoa_worker.worker as worker
+        sys.exit(worker.main(["run", "--job", {str(job_file)!r}]))
+        """,
+        tmp_path,
+    )
+    assert out.returncode == 0, out.stdout + out.stderr
+    events = [json.loads(line) for line in out.stdout.splitlines() if line.startswith("{")]
+    assert any(e["type"] == "result" for e in events), out.stdout
+    assert {"exports/cohort.xlsx", "exports/cohort.methods.txt"} <= {
+        e["path"] for e in events if e["type"] == "artifact"
+    }
+    log = (project / "logs" / "j_export.log").read_text()
+    assert "[guard] refused" not in log + out.stderr
