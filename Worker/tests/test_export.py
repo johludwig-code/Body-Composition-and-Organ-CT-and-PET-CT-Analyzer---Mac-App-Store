@@ -339,11 +339,35 @@ def test_methods_text_and_provenance(project) -> None:
     export = _export(project)
     assert export.methods_text == (
         "Segmentations were generated with MOOSE v3.2.2 (Shiyam Sundar et al., J Nucl Med "
-        "2022), based on nnU-Net (Isensee et al., Nat Methods 2021), using Body Composition "
-        "and Organ CT and PET-CT Analyzer v0.1.0 on Apple M1 Pro (PyTorch mps). 3 of 4 series "
-        "underwent visual quality control; 1 series were excluded."
+        "2022; Ferrara et al., Sci Data 2026), based on nnU-Net (Isensee et al., Nat Methods "
+        "2021), using Body Composition and Organ CT and PET-CT Analyzer v0.1.0 on Apple M1 Pro "
+        "(PyTorch mps). 3 of 4 series underwent visual quality control; 1 series were excluded."
     )
     provenance = dict(export.sheet("provenance").rows)
+    # The three works moosez 3.2.2 asks its users to cite, in the order the
+    # case report prints them (ADR 0017); a fourth row or a lost one would
+    # make the reference list disagree with the methods sentence above.
+    citations = {k: v for k, v in provenance.items() if str(k).startswith("citation.")}
+    assert list(citations) == ["citation.1", "citation.2", "citation.3"]
+    assert citations["citation.1"] == (
+        "Shiyam Sundar LK, Yu J, Muzik O, et al. Fully automated, semantic segmentation of "
+        "whole-body 18F-FDG PET/CT images based on data-centric artificial intelligence. "
+        "J Nucl Med. 2022;63(12):1941-1948. doi:10.2967/jnumed.122.264063"
+    )
+    assert citations["citation.2"] == (
+        "Ferrara D, Pires M, Gutschmayer S, et al. Sharing a whole-/total-body [18F]FDG-PET/CT "
+        "dataset with CT-derived segmentations: an ENHANCE.PET initiative. Sci Data. 2026. "
+        "doi:10.1038/s41597-026-07218-y"
+    )
+    assert citations["citation.3"] == (
+        "Isensee F, Jaeger PF, Kohl SAA, Petersen J, Maier-Hein KH. nnU-Net: a self-configuring "
+        "method for deep learning-based biomedical image segmentation. Nat Methods. "
+        "2021;18(2):203-211. doi:10.1038/s41592-020-01008-z"
+    )
+    bibtex = str(provenance["bibtex"])
+    keys = re.findall(r"@article\{(\w+),", bibtex)
+    assert keys == ["shiyamsundar2022moose", "ferrara2026enhance", "isensee2021nnunet"]
+    assert "doi = {10.1038/s41597-026-07218-y}" in bibtex
     assert provenance["intended_use"] == "For research use only. Not for clinical use."
     assert provenance["model.clin_ct_organs.sha256"] == "a" * 64
     assert "CC BY 4.0" in str(provenance["model_attribution"])

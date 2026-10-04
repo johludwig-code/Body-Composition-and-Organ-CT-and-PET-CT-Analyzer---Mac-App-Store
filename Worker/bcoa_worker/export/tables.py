@@ -62,10 +62,20 @@ MODEL_REGIONS = {
     "clin_ct_body_composition": "z-range of the L3 vertebra only (MOOSE workflow)",
 }
 
+# The three works the README of moosez 3.2.2 asks its users to cite, in the
+# order the planned case report prints them (ADR 0017), method first. The
+# README lists the dataset paper first; the difference is deliberate, so that
+# the export and the report never disagree. The owner confirmed volume, issue
+# and pages of the MOOSE paper on 2026-10-04; those of the dataset paper are
+# not known yet, so it carries year and DOI only rather than numbers that
+# might be wrong in a reference list someone copies.
 CITATIONS = (
     "Shiyam Sundar LK, Yu J, Muzik O, et al. Fully automated, semantic segmentation of "
     "whole-body 18F-FDG PET/CT images based on data-centric artificial intelligence. "
     "J Nucl Med. 2022;63(12):1941-1948. doi:10.2967/jnumed.122.264063",
+    "Ferrara D, Pires M, Gutschmayer S, et al. Sharing a whole-/total-body [18F]FDG-PET/CT "
+    "dataset with CT-derived segmentations: an ENHANCE.PET initiative. Sci Data. 2026. "
+    "doi:10.1038/s41597-026-07218-y",
     "Isensee F, Jaeger PF, Kohl SAA, Petersen J, Maier-Hein KH. nnU-Net: a self-configuring "
     "method for deep learning-based biomedical image segmentation. Nat Methods. "
     "2021;18(2):203-211. doi:10.1038/s41592-020-01008-z",
@@ -81,6 +91,14 @@ BIBTEX = """@article{shiyamsundar2022moose,
   number = {12},
   pages = {1941--1948},
   doi = {10.2967/jnumed.122.264063}
+}
+@article{ferrara2026enhance,
+  author = {Ferrara, D. and Pires, M. and Gutschmayer, S. and others},
+  title = {Sharing a whole-/total-body {[18F]FDG-PET/CT} dataset with {CT}-derived
+           segmentations: an {ENHANCE.PET} initiative},
+  journal = {Scientific Data},
+  year = {2026},
+  doi = {10.1038/s41597-026-07218-y}
 }
 @article{isensee2021nnunet,
   author = {Isensee, Fabian and Jaeger, Paul F. and Kohl, Simon A. A. and
@@ -772,10 +790,15 @@ class _Builder:
             )
         else:
             qc = "No visual quality control was recorded for these results."
+        # The first sentence is plan §11's word for word, and the About view
+        # cites the same three works in the same words in the present tense, so
+        # a methods section copied from the export, the plan or the About view
+        # cites the same works.
         return (
             f"Segmentations were generated with MOOSE v{versions.get('moosez', 'unknown')} "
-            "(Shiyam Sundar et al., J Nucl Med 2022), based on nnU-Net (Isensee et al., "
-            f"Nat Methods 2021), using {APP_NAME} v{versions.get('app', __version__)} on "
+            "(Shiyam Sundar et al., J Nucl Med 2022; Ferrara et al., Sci Data 2026), "
+            "based on nnU-Net (Isensee et al., Nat Methods 2021), using "
+            f"{APP_NAME} v{versions.get('app', __version__)} on "
             f"{chip} (PyTorch {self.data.run.device}). {qc}"
         )
 
