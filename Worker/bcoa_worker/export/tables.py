@@ -19,6 +19,7 @@ from bcoa_worker import __version__
 from bcoa_worker.export.data import ModelInfo, Patient, ProjectData, QCEntry, Series, Study
 from bcoa_worker.export.options import ExportOptions
 from bcoa_worker.intended_use import SHORT, STATEMENT
+from bcoa_worker.moose_adapter import MIRRORED_MODELS
 from bcoa_worker.naming import (
     check_sheet_name,
     display_name,
@@ -778,6 +779,11 @@ class _Builder:
             for slot in self.slots
             if any((slot.series.series_key, m.name) in self.results for m in self.models)
         }
+        exported = {
+            m.name
+            for m in self.models
+            if any((slot.series.series_key, m.name) in self.results for slot in self.slots)
+        }
         reviewed = sum(1 for key in segmented if self.qc.reviewed(key))
         # The paragraph is pasted into papers, so it claims a review only as
         # far as one was recorded; plan §11's sentence is the complete case.
@@ -794,12 +800,13 @@ class _Builder:
         # cites the same three works in the same words in the present tense, so
         # a methods section copied from the export, the plan or the About view
         # cites the same works.
+        corrections = _corrections_sentence(exported) if exported else ""
         return (
             f"Segmentations were generated with MOOSE v{versions.get('moosez', 'unknown')} "
             "(Shiyam Sundar et al., J Nucl Med 2022; Ferrara et al., Sci Data 2026), "
             "based on nnU-Net (Isensee et al., Nat Methods 2021), using "
             f"{APP_NAME} v{versions.get('app', __version__)} on "
-            f"{chip} (PyTorch {self.data.run.device}). {qc}"
+            f"{chip} (PyTorch {self.data.run.device}). {corrections}{qc}"
         )
 
     def provenance_sheet(self, created: str, methods: str) -> Sheet:
@@ -848,6 +855,30 @@ def _dictionary(sheets: Sequence[Sheet]) -> Sheet:
                 [sheet.name, column.name, column.description, column.unit or None, column.type]
             )
     return dictionary
+
+
+def _corrections_sentence(models: set[str]) -> str:
+    """What the adapter changes in MOOSE for these models, as plan §11 words it.
+
+    The adapter corrects moosez 3.2.2 in two places (ADR 0018), so the numbers
+    are not the ones MOOSE gives on its own for the same CT. A methods section
+    that did not say so would describe a different method, and the case report
+    prints this text (ADR 0017). The block-edge fill applies to every model;
+    the mirroring only to the models the adapter mirrors, so an export without
+    them does not claim a correction its numbers never had.
+    """
+    block_edges = (
+        "resampled slices at the edges of MOOSE's resampling blocks were filled from the "
+        "nearest slice instead of 0 HU"
+    )
+    if models & MIRRORED_MODELS:
+        changes = (
+            "Two corrections to MOOSE were applied at run time: the lungs model received the "
+            f"CT mirrored left to right and its result was mirrored back, and {block_edges}."
+        )
+    else:
+        changes = f"One correction to MOOSE was applied at run time: {block_edges}."
+    return f"{changes} Results can therefore differ from those of MOOSE run on its own. "
 
 
 def build(data: ProjectData, options: ExportOptions, *, created: str) -> Export:

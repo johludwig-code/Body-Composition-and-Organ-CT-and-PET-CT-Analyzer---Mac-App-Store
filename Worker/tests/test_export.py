@@ -30,6 +30,7 @@ from bcoa_worker.export.tables import SHEET_ORDER, Column, Sheet, build
 from bcoa_worker.export.writers import write_csv, write_xlsx
 from bcoa_worker.jobs import export as export_job
 from bcoa_worker.metrics import METRIC_COLUMNS
+from bcoa_worker.moose_adapter import MIRRORED_MODELS
 from bcoa_worker.protocol import Job
 from conftest import WORKER_ROOT
 
@@ -341,7 +342,10 @@ def test_methods_text_and_provenance(project) -> None:
         "Segmentations were generated with MOOSE v3.2.2 (Shiyam Sundar et al., J Nucl Med "
         "2022; Ferrara et al., Sci Data 2026), based on nnU-Net (Isensee et al., Nat Methods "
         "2021), using Body Composition and Organ CT and PET-CT Analyzer v0.1.0 on Apple M1 Pro "
-        "(PyTorch mps). 3 of 4 series underwent visual quality control; 1 series were excluded."
+        "(PyTorch mps). One correction to MOOSE was applied at run time: resampled slices at "
+        "the edges of MOOSE's resampling blocks were filled from the nearest slice instead of "
+        "0 HU. Results can therefore differ from those of MOOSE run on its own. 3 of 4 series "
+        "underwent visual quality control; 1 series were excluded."
     )
     provenance = dict(export.sheet("provenance").rows)
     # The three works moosez 3.2.2 asks its users to cite, in the order the
@@ -391,7 +395,59 @@ def test_body_composition_says_it_is_measured_at_l3_only(project) -> None:
 
 
 def _qc_sentence(project: export_data.ProjectData) -> str:
-    return _export(project).methods_text.split("(PyTorch mps). ")[1]
+    return _export(project).methods_text.split("MOOSE run on its own. ")[1]
+
+
+def _with_lungs(project: export_data.ProjectData) -> export_data.ProjectData:
+    """The fixture with the lungs model run on one series, every series reviewed."""
+    lungs = export_data.ModelInfo("clin_ct_lungs", "c" * 64, {1: "lung_upper_lobe_left"})
+    run = dataclasses.replace(project.run, models=(*project.run.models, lungs))
+    row = export_data.ResultRow(
+        "se1", "clin_ct_lungs", 1, "lung_upper_lobe_left", {"volume_ml": 1000.0}, "mps", ()
+    )
+    seen = [
+        export_data.QCEntry(key, None, None, "accepted", "JL", "2026-10-02T14:00:00Z", None)
+        for key in ("se2", "se6")
+    ]
+    return dataclasses.replace(
+        project, run=run, results=(*project.results, row), qc=(*project.qc, *seen)
+    )
+
+
+def test_methods_text_names_the_lungs_correction_only_with_the_lungs_model(project) -> None:
+    # The adapter mirrors the lungs model's CT and labelmap (ADR 0018); an
+    # export of other models only must not claim that correction. The sentence
+    # names the lungs model, so a second mirrored model has to change it.
+    assert MIRRORED_MODELS == frozenset({"clin_ct_lungs"})
+    with_lungs = _export(_with_lungs(project)).methods_text
+    assert "Two corrections to MOOSE were applied at run time: the lungs model" in with_lungs
+    assert "One correction" not in with_lungs
+    without = _export(_with_lungs(project), models=["clin_ct_organs"]).methods_text
+    assert "One correction to MOOSE was applied at run time: resampled slices" in without
+    assert "lungs" not in without
+
+
+def test_methods_text_is_the_plans_template_word_for_word(project) -> None:
+    # Plan §11 holds the methods text people copy into papers, ADR 0017 says
+    # the case report prints the export's; a change to one without the other
+    # would give two methods for the same numbers.
+    plan = (WORKER_ROOT.parent / "docs" / "PLAN.md").read_text(encoding="utf-8")
+    heading = plan.index("**Methodentext (Vorlage")
+    template = plan[heading:].split("\n\n")[1].strip().removeprefix("„").removesuffix("“")
+    placeholders = re.split(r"\\<[^>]+>", template)
+    assert len(placeholders) == 7, template
+    pattern = "(.+?)".join(re.escape(part) for part in placeholders)
+    text = _export(_with_lungs(project)).methods_text
+    match = re.fullmatch(pattern, text)
+    assert match, f"export: {text!r}\nplan:   {template!r}"
+    assert match.groups() == (
+        "3.2.2",
+        "Body Composition and Organ CT and PET-CT Analyzer",
+        "0.1.0",
+        "Apple M1 Pro",
+        "mps",
+        "1",
+    )
 
 
 def test_methods_text_claims_no_review_that_was_not_recorded(project) -> None:
