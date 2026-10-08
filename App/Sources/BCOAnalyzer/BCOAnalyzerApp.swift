@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 enum AppIdentity {
     /// Read from the bundle so that renaming the app (ADR 0001) touches
-    /// project.yml only.
+    /// Info.plist and the worker's APP_NAME only.
     static var displayName: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String

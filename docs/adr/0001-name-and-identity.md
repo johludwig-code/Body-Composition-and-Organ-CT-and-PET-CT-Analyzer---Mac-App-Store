@@ -31,8 +31,10 @@ Apache-2.0 §6); the working title complies.
 
 The Store name must be chosen before M8. Candidates within 30 characters:
 "Body & Organ CT Analyzer" (24), "BodyComp & Organ CT/PET" (23). Renaming
-later touches only `project.yml` and `Info.plist` because no code spells the
-title out; the UI reads it from the bundle.
+later touches `Info.plist` and the worker's `APP_NAME` in
+`Worker/bcoa_worker/export/tables.py`, which writes the name into exported
+methods texts and cannot read the bundle; a test holds the two equal. The UI
+reads the name from the bundle.
 
 The title promises PET-CT and body composition. In the plan both are phase 2
 (§18). The PET/CT pairing is already indexed in v1 (§7), so the promise is kept

@@ -35,17 +35,21 @@ checkpoint, so the download is close to the installed size.
 | part | installed | gzip | measured on |
 |---|---|---|---|
 | CPython 3.12.11 (python-build-standalone, stripped) | 45 MB | 15 MB | 2026-10-02, macOS arm64 archive |
-| site-packages from `requirements.lock`, macOS arm64 wheels | 1 170 MB | 297 MB | 2026-10-02, `uv pip install --target`, wheels for `macosx_14_0_arm64` |
+| site-packages from `requirements.lock`, macOS arm64 wheels, before ADR 0014's trim | 1 170 MB | 297 MB | 2026-10-02, `uv pip install --target`, wheels for `macosx_14_0_arm64` |
 | of which torch | 529 MB | | |
 | of which SimpleITK | 170 MB | | |
+| the Release app from `bundle.yml`, after the trim, with `clin_ct_organs` only | 1 392 MB: Python 1 253 MB, weights 123 MB, signatures 8 MB, app 6 MB, notices 1 MB | | 2026-10-04, macos-15 arm64 runner, run 37200011634, the size report of `verify_bundle.py` |
 
-**Estimate for the whole app with every clinical model: about 2.6 GB
-installed, about 1.6 GB to download.** The Swift app itself is a few MB. To be
-confirmed by the real bundle on a Mac (spike S4) and against App Store
-Connect's limits in S3. Candidates for trimming before then: packages pulled
-in only for training or downloads (`httpx`, `huggingface_hub`, the `nnUNetv2_*`
-training entry points), `gdcm` if pydicom does not need it for the
-compressions seen in practice.
+**The whole app with every clinical model: about 2.7 GB installed, about
+1.6 GB to download.** The installed size is the measured Release app with the
+other ten models added (1 392 − 123 + 1 406 MB); the download is estimated from
+the gzip column. Still to be checked against App Store Connect's limits in S3.
+The first two rows are from before ADR 0014's trim, which has since removed
+python-gdcm, setuptools, blosc2's `libtcc`, the real cc3d (a stub instead), the
+console scripts with the `nnUNetv2_*` entry points, and torch's headers and
+protobuf compiler. Still in the runtime and candidates for trimming:
+`huggingface_hub` and `hf_xet` (15 MiB together by `du` in the same run, about 16 MB) and `httpx`.
+`requests` and `urllib3` stay, because moosez imports them (ADR 0016).
 
 ## Runtime per model
 

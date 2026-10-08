@@ -82,7 +82,7 @@ _TEXT_HINTS = [
 STATIC_ENTRIES = """\
 ## CPython 3.12 (python-build-standalone)
 
-Licence: PSF-2.0, with the licences of the libraries it bundles (OpenSSL
+License: PSF-2.0, with the licenses of the libraries it bundles (OpenSSL
 Apache-2.0, SQLite public domain, zlib, libffi MIT, XZ, bzip2, mpdecimal,
 ncurses). Source: https://github.com/astral-sh/python-build-standalone
 
@@ -109,7 +109,7 @@ models/manifest.json.
   © The FreeType Project (www.freetype.org). All rights reserved.
 - libgfortran, libquadmath, libgcc_s (in SciPy and NumPy): GPL-3.0 with the
   GCC Runtime Library Exception, which allows distributing them with
-  software under any licence.
+  software under any license.
 - OpenSSL (linked into CPython's libpython for `_ssl` and `_hashlib`):
   Apache-2.0. The app has no network entitlement and never opens a
   connection; see docs/OPEN_QUESTIONS.md #12.
@@ -119,7 +119,7 @@ Removed from the packages before signing (ADR 0014): TinyCC from blosc2
 
 ## GRDB.swift
 
-Copyright Gwendal Roué. MIT licence. https://github.com/groue/GRDB.swift
+Copyright Gwendal Roué. MIT License. https://github.com/groue/GRDB.swift
 """
 
 
@@ -213,12 +213,12 @@ def render(packages: list[Package]) -> str:
         STATIC_ENTRIES,
         "## Python packages",
         "",
-        "| package | version | licence |",
+        "| package | version | license |",
         "|---|---|---|",
     ]
     lines += [f"| {p.name} | {p.version} | {p.licence} |" for p in packages]
     for p in packages:
-        lines += ["", f"### {p.name} {p.version}", "", f"Licence: {p.licence}"]
+        lines += ["", f"### {p.name} {p.version}", "", f"License: {p.licence}"]
         for filename, text in p.texts:
             lines += ["", f"#### {filename}", "", "```text", text.rstrip(), "```"]
     return "\n".join(lines) + "\n"

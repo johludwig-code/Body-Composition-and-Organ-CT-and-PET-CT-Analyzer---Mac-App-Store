@@ -11,6 +11,14 @@ support package to spike S3. PyInstaller and conda are rejected because
 `multiprocessing` (spawn) and Dask must work unchanged — MOOSE uses a spawn
 `ProcessPoolExecutor` in `moosez.py` and `image_conversion.py`.
 
+Later, in the sandbox: no `multiprocessing` pool, queue or lock can start
+there, because the sandbox refuses the POSIX semaphores they need. ADR 0015
+runs nnU-Net's export without a pool, in the worker's calling thread, and
+MOOSE's pools are not on the path the adapter calls. The reason against
+PyInstaller and conda stands: MOOSE, nnU-Net and Dask run from their published
+packages, unchanged on disk; the adapter's run-time changes are ADRs 0011,
+0015 and 0018.
+
 ## Decision (proposed)
 
 python-build-standalone, `install_only_stripped`, pinned:

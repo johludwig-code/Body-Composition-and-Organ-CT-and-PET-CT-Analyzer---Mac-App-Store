@@ -88,7 +88,7 @@ that model passes the side check.
 | 6 Sternum and ribs · Other bones | right and left side by side; missing bones in a short list instead of empty rows | coronal whole-body MIP |
 | 7 Body composition at the L3 level | box "L3 level only" (20 slices); skeletal muscle, subcutaneous and visceral fat with volume and density | axial slice at mid-L3, sagittal locator with the measured slab |
 | 8 Definitions and quality checks | the definition of every value; QC flags in plain words; the side check | – |
-| 9 Methods and references | methods text with the adapter's two corrections (ADR 0018), QC status, versions, model checksums, intended use; References (section 6) | – |
+| 9 Methods and references | methods text with the adapter's corrections (ADR 0018), QC status, versions, model checksums, intended use; References (section 6) | – |
 
 - Every page has a header with pseudonym, timepoint and series, and a footer
   with the per-page notice (section 8), "Page x of y" and the QC status.
@@ -285,9 +285,9 @@ Where each part comes from:
   code license the same way, and the nnU-Net sentence gives nnU-Net v2, which
   the bundle carries and [3] cites, its license too.
 
-The methods text before the references says that the app corrects MOOSE in
-two places (ADR 0018), so that nobody takes the numbers for unchanged MOOSE
-output. The report is never called a "MOOSE report": CC BY 4.0 §2(a)(6) rules
+The methods text before the references names the adapter's corrections to
+MOOSE (ADR 0018: both when the lungs model is in the export, otherwise the
+block-edge fill alone), so that nobody takes the numbers for unchanged MOOSE output. The report is never called a "MOOSE report": CC BY 4.0 §2(a)(6) rules
 out any suggestion of endorsement, and Apache-2.0 §6 grants no use of the
 licensor's names beyond describing the origin of the work. Apple 4.1(c), which
 keeps "MOOSE" out of the app's name and icon (PLAN §14), points the same way.
@@ -459,9 +459,14 @@ orientation.
 
 - **Complete name catalog.** Every label of every bundled model has an English
   name, no name occurs twice within a model, and no short form is longer than
-  18 characters. The test reads the labels from the bundle's model manifest
-  (`manifest.json`, written by `Scripts/fetch_models.py`), so a new model
-  without names turns the build red.
+  18 characters. CI has no bundle with every model (the `swift` job fetches
+  none, `bundle.yml` the organ model), so the test reads the labels from
+  `Models/manifest.lock.json`: step 2 extends `fetch_models.py --update-lock`
+  to record each model's labels there (today it records only URL and
+  checksum, and only for a model not yet in the lock). A model cannot be
+  fetched without a lock entry, so a new model without names turns the build
+  red. (Changed after the merge audit of 4 October 2026; the first version
+  read the bundle's `manifest.json`, which CI never has for every model.)
 - **Content read back.** PDFKit reads the PDF back. The test checks the page
   count, the per-page notice of section 8 on **every** page against its
   constant, and that every value of the content file stands in the text as the
@@ -596,9 +601,9 @@ order of the Phase 2 pages, is OPEN_QUESTIONS #8 (section 13).
   gains the dataset citation in PR #2, and the report prints that text. The
   `labels` sheet's `display_name` column, defined as the label name shown in
   the app, follows the catalog once step 2 lands; no column name changes.
-- **ADR 0018 (PR #3).** The methods text names the adapter's two corrections.
-  The export writes that sentence once both changes are on main, and the
-  report prints it from there. The side check stays although the lungs model
+- **ADR 0018 (PR #3).** The export's methods text names the adapter's
+  corrections (both when the lungs model is in the export) since PR #2 met
+  PR #3, held to PLAN §11 by a test, and the report prints it from there. The side check stays although the lungs model
   is now corrected.
 - **ADR 0016 (PR #3).** The matplotlib fallback runs under the worker's guard.
   In the measurement the guard refused one call (`fc-list`, when the first
@@ -613,7 +618,8 @@ order of the Phase 2 pages, is OPEN_QUESTIONS #8 (section 13).
   says.
 - **Open items.** OPEN_QUESTIONS #20 (review of the name catalog), #21
   (regulatory classification), #22 (the BOA article), #8 (the order of the
-  Phase 2 pages), #14 (CC BY 4.0 and the App Store license, PR #3) and #6
+  Phase 2 pages), #14 (CC BY 4.0 and the App Store license, PR #3), #23
+  (where the report files of two runs or exports go, before step 3) and #6
   (data protection officer).
 
 ## Rejected alternatives

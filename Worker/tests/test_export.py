@@ -14,6 +14,7 @@ import hashlib
 import io
 import json
 import os
+import plistlib
 import re
 from datetime import datetime
 from pathlib import Path
@@ -26,7 +27,7 @@ from bcoa_worker.channel import ProtocolChannel
 from bcoa_worker.errors import JobFailure
 from bcoa_worker.export import data as export_data
 from bcoa_worker.export.options import ExportOptionError, parse_options
-from bcoa_worker.export.tables import SHEET_ORDER, Column, Sheet, build
+from bcoa_worker.export.tables import APP_NAME, SHEET_ORDER, Column, Sheet, build
 from bcoa_worker.export.writers import write_csv, write_xlsx
 from bcoa_worker.jobs import export as export_job
 from bcoa_worker.metrics import METRIC_COLUMNS
@@ -425,6 +426,13 @@ def test_methods_text_names_the_lungs_correction_only_with_the_lungs_model(proje
     without = _export(_with_lungs(project), models=["clin_ct_organs"]).methods_text
     assert "One correction to MOOSE was applied at run time: resampled slices" in without
     assert "lungs" not in without
+
+
+def test_methods_text_names_the_app_by_its_display_name() -> None:
+    # The app's name is still open (OPEN_QUESTIONS #1). A rename in Info.plist
+    # that left the worker's constant behind would cite another app in papers.
+    info = WORKER_ROOT.parent / "App" / "Resources" / "Info.plist"
+    assert plistlib.loads(info.read_bytes())["CFBundleDisplayName"] == APP_NAME
 
 
 def test_methods_text_is_the_plans_template_word_for_word(project) -> None:
