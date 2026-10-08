@@ -1,7 +1,7 @@
 # ADR 0019: The import (M2) is built before spike S3 has a Go
 
-- Status: accepted (the owner's go-ahead of 8 October 2026; a "no" on the
-  decision card in the project thread reverts it before anything merges)
+- Status: accepted (by the owner on 8 October 2026, on a decision card in
+  the project thread: "Jetzt bauen")
 - Date: 2026-10-08
 - Plan section: §17, §20
 
