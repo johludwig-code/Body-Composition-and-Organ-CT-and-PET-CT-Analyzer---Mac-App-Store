@@ -65,8 +65,11 @@ flowchart LR
     XLS["Export: XlsxWriter, CSV"]
   end
   MODELS[("Modellgewichte im Bundle, read-only")]
+  CAT[("index/catalog.sqlite: Dateikatalog des Index")]
   UI --> CORE
   CORE --> DB
+  IDX --> CAT
+  CAT -- "Merge einer vollständigen Generation, nur lesend" --> CORE
   CORE -- "Job-JSON" --> WORKER
   WORKER -- "Events als JSON Lines" --> CORE
   MODELS --> SEG
@@ -81,6 +84,7 @@ flowchart LR
 | Prozessmodell | frischer Worker-Prozess pro Job | Absturzisolation, Speicher wird nach jedem Job frei, Abbruch per Signal | Interpreter im App-Prozess |
 | IPC | JSON Lines über stdout des Workers, Logs in eine Datei | einfach, testbar, sprachneutral | XPC (später möglich) |
 | Persistenz | SQLite mit GRDB.swift (MIT) | offenes Schema, Migrationen, extern lesbar | SwiftData; NSDocument (Safe-Save würde GB-große Ordner kopieren) |
+| Index-Katalog | zweite SQLite-Datei `index/catalog.sqlite` im Projektordner, die nur der Index-Job schreibt: eine Zeile je Datei, dazu abgeleitete Tabellen je Generation; die App führt eine vollständige Generation in einer Transaktion in `project.sqlite` zusammen (ADR 0020) | Wiederaufnahme nach Abbruch, Header-Cache und Eingabe der Gruppierung in einem; `project.sqlite` hält keine Pfade einzelner Quelldateien und wächst nicht mit der Zahl der Dateien; löschbar, kostet dann einen vollen Lesedurchgang | Staging-Datei je Job mit Dateitabelle in `project.sqlite`; Gruppierung und Auswahl in Swift; Worker schreibt `project.sqlite` |
 | Viewer | eigene Schichtdarstellung mit Accelerate/vImage und CALayer | volle Kontrolle über die Orientierung, pixelgenau testbar, kein WebKit | WebView mit NiiVue, VTK |
 | Viewer-Daten | Worker orientiert Volumina kanonisch nach LPS um | keine Orientierungs-Mehrdeutigkeit im Swift-Code | NIfTI-Parsing in Swift |
 | Excel | XlsxWriter (BSD-2) im Worker | ausgereift, schnell bei großen Dateien | Swift-Wrapper um libxlsxwriter |
@@ -89,6 +93,8 @@ flowchart LR
 | Python-Pakete | `uv` mit Lockfile inklusive Hashes | reproduzierbare Builds | pip ohne Lockfile |
 
 Jede Zeile der Tabelle wird als ADR in `docs/adr/` festgehalten, bevor der zugehörige Code entsteht.
+
+Jede Datenbank hat genau einen Schreiber: `project.sqlite` die App, `index/catalog.sqlite` der Index-Job. `project.sqlite` läuft auf lokalen Volumes im WAL-Modus, sonst im DELETE-Modus; der Katalog immer im DELETE-Modus. Dass kein Worker den Katalog schreibt, während die App ihn zusammenführt, sichert die Warteschlange, nicht ein Lock (ADR 0021).
 
 ## 4. Bundling: alles in der App
 
@@ -140,7 +146,7 @@ Für jeden Job startet die App einen frischen Python-Worker. Er meldet sich übe
 
 **Lebenszyklus**
 
-1. Die App schreibt `job.json` in den Projektordner und aktiviert die Security-Scoped Bookmarks der beteiligten Ordner (`startAccessingSecurityScopedResource`).
+1. Die App schreibt `job.json` in den Projektordner und aktiviert die Security-Scoped Bookmarks der beteiligten Ordner (`startAccessingSecurityScopedResource`). Die Job-Datei entsteht mit Modus 0600 und wird am Ende des Jobs und beim nächsten Start der App gelöscht, denn sie enthält absolute Quellpfade und beim Index-Job den Verknüpfungsschlüssel (ADR 0024).
 2. Sie startet `python -I -m aq_backend.worker run --job <pfad>`. Der Kindprozess erbt die Sandbox einschließlich der zu diesem Zeitpunkt aktiven Ordnerfreigaben – **in Spike S2 verifizieren**. Fallback: Serien vor der Verarbeitung in den Projektordner konvertieren.
 3. Der Worker dupliziert stdout als Protokollkanal und leitet die Deskriptoren 1 und 2 per `os.dup2` in die Logdatei um. So stören MOOSE-Banner, Rich-Ausgaben und dcm2niix-Meldungen das Protokoll nicht.
 4. Am Ende stehen ein `done`-Event und ein Exit-Code; Ergebnisse liegen als Dateien im Projektordner.
@@ -162,7 +168,14 @@ Für jeden Job startet die App einen frischen Python-Worker. Er meldet sich übe
 {"type":"progress","job_id":"j_0042","stage":"segment","model":"clin_ct_organs","fraction":null,"message":"Model 2 of 5"}
 ```
 
-**Job-Arten:** `index`, `convert`, `segment`, `metrics`, `viewer_cache`, `export`, `selftest`.
+**Job-Arten:** `index`, `convert`, `segment`, `metrics`, `viewer_cache`, `export`, `selftest`. Der Worker importiert den Handler einer Job-Art erst, wenn ein Job dieser Art läuft; ein Index-Job lädt so weder torch noch MOOSE noch den Export.
+
+**Index-Job (ADR 0020, 0021, 0025)**
+
+- Modi: `scan` durchläuft die genannten Quellordner, liest neue und geänderte Header in Stapeln von höchstens 1 000 Dateien oder 2 s und gruppiert neu; `regroup` gruppiert ohne Durchlauf neu, wenn sich die Auswahlkonfiguration geändert hat oder eine Quelle entfernt wurde; `previews` erzeugt Vorschaubilder für die sichtbaren Zeilen.
+- Nutzlast: Katalog und Vorschauordner relativ zum Projekt, die Quellen mit absolutem Wurzelpfad und Status, Verknüpfungsschlüssel, Auswahl- und Identitätskonfiguration. Quellpfade nimmt der Worker nur aus `sources[].root`; eine nicht genannte Quelle lehnt er ab.
+- Ergebnis nur mit Zählungen; Fehlercodes `index_failed`, `catalog_busy` und `link_key_mismatch`. `progress` erhält ein optionales Objekt `detail` (`phase`, `done`, `total`), aus dem die App ihren lokalisierten Text macht, `artifact` die Art `preview`. Beides ist additiv; das Protokoll bleibt bei Version 1, weil App und Worker im selben Bundle ausgeliefert werden und noch keine Version veröffentlicht ist (ADR 0020).
+- Ein Abbruch verwirft nur den laufenden Stapel; der nächste Scan liest nur den Rest. Ein Absturz wirkt wie ein Abbruch.
 
 **Abbruch und Robustheit**
 
@@ -170,8 +183,9 @@ Für jeden Job startet die App einen frischen Python-Worker. Er meldet sich übe
 - Watchdog: Bleibt der Heartbeat 5 min aus, gilt der Job als hängend und wird beendet (Standardwerte, einstellbar).
 - Beim Beenden der App werden alle Worker beendet (Store-Regel 2.4.5(iii)).
 - Standard: ein Segmentierungs-Worker zur Zeit wegen des GPU-Speichers; Indexierung und Export dürfen parallel laufen.
+- Index-Jobs in den Modi `scan` und `regroup` bilden die exklusive Gruppe `catalog` und laufen je Projekt nacheinander; `previews` läuft als leichter Job außerhalb der Gruppe und liest den Katalog nur in einer kurzen Transaktion. Ein `finalize`-Hook der Warteschlange führt den Katalog zusammen, nachdem der Worker des Jobs, der ihn geschrieben hat, beendet ist und bevor der nächste Job der Gruppe startet; beim Start der App geschieht das, bevor ein Job eingeplant wird. Scheitert ein Merge, etwa weil ein Export auf einem Netzlaufwerk länger liest als die Wartezeit von 30 s, holt ihn der `finalize`-Hook des nächsten Index-Jobs oder des Exports nach; bis dahin zeigt die Quellenliste, dass der Index noch nicht übernommen ist (ADR 0021).
 
-**Verträge:** JSON-Schemas mit Beispiel-Fixtures liegen in `/Protocol`. Beide Testsuiten (Swift Codable, Python-Dataclasses) parsen alle Fixtures; jede Protokolländerung erhöht `protocol_version`.
+**Verträge:** JSON-Schemas mit Beispiel-Fixtures liegen in `/Protocol`. Beide Testsuiten (Swift Codable, Python-Dataclasses) parsen alle Fixtures; jede Protokolländerung erhöht `protocol_version`, ausgenommen additive Erweiterungen, solange noch keine Version veröffentlicht ist (ADR 0020).
 
 ## 6. Datenmodell, Projektordner und Persistenz
 
@@ -180,6 +194,7 @@ Ein Projekt ist ein vom Nutzer gewählter Ordner mit einer SQLite-Datenbank; die
 ```text
 MeineStudie.aqproj/
   project.sqlite     Index, Auswahl, Läufe, Ergebnisse, QC, Audit-Log
+  index/             catalog.sqlite (Dateikatalog, schreibt nur der Worker), catalog.lock, previews/; löschbarer Cache (ADR 0020)
   work/<serie>/      ct.nii.gz, labels/<modell>.nii.gz, metrics.json
   viewer-cache/      kanonische LPS-Volumina, LRU mit einstellbarem Größenlimit
   exports/           Excel/CSV, Masken, Reproduzierbarkeits-Pakete
@@ -190,22 +205,28 @@ MeineStudie.aqproj/
 
 | Tabelle | Inhalt | Wichtige Felder |
 | --- | --- | --- |
-| `sources` | Quellordner | Bookmark, Anzeigepfad, hinzugefügt am |
-| `patients` | Patienten | `patient_key`, `pseudonym` (P0001 …), `sex`, `age_at_first_study` |
-| `identifiers` | Klartext-Kennungen, getrennt und löschbar | `patient_key`, `patient_id`, `accession_numbers` |
-| `studies` | Untersuchungen | `study_key`, `study_uid`, `study_date`, `description` |
-| `series` | Serien | `series_uid`, Modalität, Beschreibung, Bildanzahl, Schichtdicke, Pixelabstand, Kernel, Hersteller, kVp, Kontrastmittel, ImageType, FrameOfReferenceUID, Fingerprint, `selected`, `primary` |
+| `sources` | Quellordner | Bookmark, Anzeigepfad (nur der Ordnername, OPEN_QUESTIONS #25), hinzugefügt am, `state`, `volume_kind` |
+| `patients` | Patienten | `patient_key`, `pseudonym` (P0001 …), `sex`, `age_at_first_study`, `id_status` |
+| `identifiers` | Klartext-Kennungen, getrennt und löschbar | `patient_key`, `patient_id`, `accession_numbers`, `id_source` |
+| `studies` | Untersuchungen | `study_key`, `study_uid`, `study_date`, `description`, `age_years`, `selection_mode`, `index_state` |
+| `series` | Serien bzw. Teilserien | `series_uid`, `part`, Modalität, Beschreibung, Bildanzahl, Schichtdicke, Pixelabstand, Kernel und Kernel-Klasse, Hersteller, kVp, Kontrastmittel, ImageType, FrameOfReferenceUID, Fingerprint, Geometrie (Schichtzahl, Schichtabstand, z-Ausdehnung, Orientierung), Rang, `selected`, `primary`, `selection_origin`, `selection_reason` (Codes), `index_state` |
+| `series_pairs` | PET/CT-Paare | PET- und CT-Serie, Schwächungskorrektur, z-Überlappung |
+| `index_checks` | Prüfungen des Index | Objekt, Code, Stufe, Parameter |
+| `patient_links` | Verknüpfungen zu Patienten | HMAC-Verknüpfung (`pid:` oder `folder:`), `patient_key` |
+| `cohorts`, `cohort_series` | gespeicherte Auswahlen | Name; Serien mit Primary-Flag |
+| `project_meta` | Projektwerte | Verknüpfungsschlüssel, zusammengeführte Katalog-Generation, Auswahl- und Identitätskonfiguration |
+| `key_counters` | Zähler für Schlüssel und Pseudonyme | nie wiederverwendet |
 | `runs` | Analyse-Läufe | Versionen, Gerät, Modelle mit Prüfsummen, Einstellungen, `locked` |
 | `jobs` | Aufträge | Art, Status, Zeiten, tatsächliches Gerät, Fehlercode, Logpfad |
 | `results` | Metriken je Label | `run_id`, `series_key`, `model`, `label_id`, `label_name`, Metriken, Flags |
 | `qc` | Prüfstatus | Serie, optional Label, Status, Reviewer, Zeit, Kommentar |
 | `audit_log` | Protokoll | Zeit, Akteur, Aktion, Objekt, Details ohne Patientendaten |
 
-Patientennamen und Geburtsdaten werden nie gespeichert. Das Alter wird beim Indexieren aus Geburts- und Untersuchungsdatum berechnet oder aus PatientAge übernommen.
+Patientennamen und Geburtsdaten werden nie gespeichert. Das Alter wird je Untersuchung (`age_years`) beim Indexieren aus PatientAge übernommen oder aus Geburts- und Untersuchungsdatum berechnet; das Geburtsdatum wird nur im Speicher gelesen. `age_at_first_study` ist das Alter bei der ersten Untersuchung mit ausgewählter Serie, sonst bei der ersten datierten, und wird nach jedem Merge und jeder Auswahländerung neu berechnet (ADR 0024, OPEN_QUESTIONS #27).
 
 **Analyse-Lauf (Run):** Ein Lauf bündelt Modelle, Versionen, Gerät und Einstellungen. Nach dem ersten Export ist er gesperrt; geänderte Einstellungen erzeugen einen neuen Lauf.
 
-**Cache-Regel:** Ein Ergebnis wird wiederverwendet, wenn Serien-Fingerprint (sortierte SOPInstanceUIDs plus Dateigrößen), Modell-Prüfsumme, Pipeline-Version und Geräteklasse übereinstimmen.
+**Cache-Regel:** Ein Ergebnis wird wiederverwendet, wenn Serien-Fingerprint (sortierte SOPInstanceUIDs plus Dateigrößen), Modell-Prüfsumme, Pipeline-Version und Geräteklasse übereinstimmen. Gemeint ist ein Inhalts-Fingerprint, den M3 in einem eigenen ADR festlegt, nicht `series.fingerprint` des Index: Der hält ohne Dateigrößen nur die Identität einer Teilserie fest und bleibt gleich, wenn eine Serie mit denselben UIDs und anderen Pixeldaten neu exportiert wird (ADR 0022).
 
 ## 7. Import: Quellordner, Indexierung und Serienauswahl
 
@@ -214,35 +235,49 @@ Nutzer fügen beliebig viele Quellordner hinzu. Die App zeigt danach Patient →
 **Ablauf**
 
 1. „Add Source Folders…“ öffnet ein NSOpenPanel mit Mehrfachauswahl; jeder Ordner wird als Bookmark gespeichert. Bei Netzlaufwerken erscheint ein Hinweis auf die Geschwindigkeit.
-2. Ein `index`-Job liest nur Header (`pydicom` mit `stop_before_pixels`, nur benötigte Tags), erkennt DICOM an der Präambel „DICM“ und wertet DICOMDIR aus.
-3. Gruppierung nach PatientID, StudyInstanceUID und SeriesInstanceUID. Serien mit wechselnder Orientierung oder Bildgröße werden in Teilserien getrennt und markiert.
-4. Duplikate über Ordner hinweg (gleiche SOPInstanceUID) zählen nur einmal.
-5. Erneutes Scannen ist inkrementell (Pfad, Größe, Änderungszeit).
+2. Ein `index`-Job liest nur Header (`pydicom` mit `stop_before_pixels`, nur benötigte Tags) und erkennt Dateien am Inhalt: DICOM an der Präambel „DICM“, NIfTI am Header. Archive (ZIP, gzip, tar, 7z, RAR) werden gezählt, nicht geöffnet; symbolische Links werden nicht verfolgt. DICOMDIR dient als Vollständigkeitsprüfung je Serie über die SOPInstanceUID, nicht als Dateiquelle (ADR 0022).
+3. Gruppierung nach SeriesInstanceUID innerhalb der StudyInstanceUID; die Untersuchung findet ihren Patienten über einen HMAC der PatientID (ADR 0024). Serien werden nach SOP-Klasse, Orientierung, Bildgröße, Pixelabstand, wiederholter Akquisition, Phase oder Echo und Stack in Teilserien getrennt und markiert. Multiframe-Dateien werden nie getrennt, Gantry-Tilt ist eine Warnung und kein Trenngrund. Eine Teilserie behält ihre Identität über eine Neugruppierung, wenn sie mehr als die Hälfte der Instanzen der alten teilt (ADR 0022).
+4. Duplikate über Ordner hinweg (gleiche SOPInstanceUID) zählen nur einmal. Es gewinnt zuerst die Datei mit vollständigen Pixeldaten, dann die mit einer Transfer Syntax, die der Konverter lesen kann, dann die mit der kleinsten Quelle und dem kleinsten relativen Pfad.
+5. Erneutes Scannen ist inkrementell (Quelle und relativer Pfad, Größe, Änderungszeit, Leserversion); ein Scan ohne Änderung schreibt keine neue Generation und braucht keinen Merge (ADR 0020).
 
 **Serientabelle:** Modalität, Beschreibung, Bildanzahl, Schichtdicke, Kernel, Datum, Kontrastmittel-Tag, Scanner, Vorschaubild der mittleren Schicht (bei Bedarf erzeugt), Status.
 
 **Filter:** Modalität, Mindestanzahl Schichten, maximale Schichtdicke, Beschreibung (Text oder Regex), Zeitraum, „Not Yet Analyzed“.
 
-**Auto-Auswahl pro Untersuchung (konfigurierbar, Begründung als Tooltip)**
+**Auto-Auswahl pro Untersuchung (konfigurierbar, Begründung als Tooltip; ADR 0023)**
 
-1. Modalität CT, ImageType enthält ORIGINAL und AXIAL. Ausgeschlossen sind LOCALIZER, DERIVED/SECONDARY, Dose Reports, RTSTRUCT, SEG und PR.
-2. Mindestens 50 Schichten (Standardwert).
-3. Größte z-Abdeckung, dann dünnste Schichten, dann Weichteil-Kernel laut einstellbarer Liste.
-4. Die gewählte Serie wird für den Export als „Primary“ markiert.
+1. Modalität CT und eine Bild-SOP-Klasse; ausgeschlossen sind Dose Reports, SR, RTSTRUCT, SEG, PR, Rohdaten und Secondary Capture. ImageType, Werte ab 0 gezählt: Wert 0 ist ORIGINAL, AXIAL steht unter den Werten ab 2 (Enhanced und Legacy Converted CT: AXIAL oder VOLUME), und kein Wert steht in der einstellbaren Ausschlussliste (LOCALIZER, SCOUT, PROJECTION IMAGE, SCREEN SAVE, REFORMATTED, MPR, MIP, MINIP, VRT, CPR, CURVED, SECONDARY). DERIVED ist ausgeschlossen, außer mit `accept_derived_primary`, wenn PRIMARY unter den Werten ab 1 steht; Siemens schreibt die Low-Dose-CT einer PET/CT als `DERIVED\CT_SOM5 SPI\PRIMARY\AXIAL`. Bis OPEN_QUESTIONS #24 beantwortet ist, steht die Einstellung auf aus; dann ist dies die bisherige Regel „ORIGINAL und AXIAL, ohne LOCALIZER und DERIVED/SECONDARY“, erweitert um VOLUME bei Enhanced und Legacy Converted CT und verschärft um die feste Stellung der Werte, die Ausschlussliste und den Ausschluss von Secondary Capture. So fällt `ORIGINAL\PRIMARY\AXIAL\MIP` jetzt heraus, und eine Enhanced CT mit `ORIGINAL\PRIMARY\VOLUME` kommt hinzu; jede dieser Abweichungen ist in ADR 0023 begründet. Ein Test hält die Regel an der Tabelle aus BOCARTA-MOOSE.
+2. Mindestens 50 verschiedene Schichtpositionen (Standardwert), gültige Geometrie, axial (|n_z| ≥ 0,95), keine abgeschnittenen Dateien und keine fehlenden Pixeldaten, eine Transfer Syntax, die das gepinnte dcm2niix 1.0.20260724 lesen kann (Deflated und JPEG Extended 12 Bit liest es nicht, unbekannte Syntaxen gelten als nicht lesbar), kein ausgeschlossener Begriff in der Beschreibung (Begriffe bis 3 Zeichen nur als ganzes Wort). Jede verfehlte Bedingung wird als Code festgehalten.
+3. Rangfolge: größte z-Abdeckung (Toleranz 1 mm, nur für Rundung; eine größere Toleranz ist OPEN_QUESTIONS #30), dann dünnste Schichten (Toleranz 0,02 mm), dann Kernel-Klasse (soft vor unknown vor sharp), dann ORIGINAL vor DERIVED, weniger Warnungen, niedrigste SeriesNumber, Serien-UID und Teil. Kernel vor Schichtdicke (OPEN_QUESTIONS #28) und eine Untergrenze der Schichtdicke (#29) sind einstellbar und stehen standardmäßig aus.
+4. Die gewählte Serie wird für den Export als „Primary“ markiert. Höchstens eine Primary je Untersuchung, und sie ist immer ausgewählt; das erzwingen ein partieller eindeutiger Index und zwei Trigger.
+5. Die Begründung ist kein Text, sondern Codes mit Parametern (`selection_reason`); die App macht daraus über den String Catalog den englischen Tooltip. Jede Untersuchung hat einen Auswahlmodus (auto oder user), jede Serie eine Herkunft (auto, user, bulk_thin_ct oder cohort). Ein Rescan überschreibt nie eine Wahl des Nutzers; verschwindet die Primary einer von Hand gewählten Untersuchung oder wandert sie in eine andere Untersuchung, gilt dort wieder die Auto-Auswahl.
+6. Eine ausgeschlossene Serie kann der Nutzer von Hand wählen, außer Nicht-Bild-Objekten und Secondary Capture; der Ausschluss erscheint dann vor dem Start als Warnung.
+7. Alle Werte der Auto-Auswahl stellt der Nutzer im Projektdialog „Selection Settings…“ ein: Mindestzahl der Schichten, Toleranzen, Untergrenze der Schichtdicke, Kernel-Listen, beide Ausschlusslisten, Kernel vor Schichtdicke und `accept_derived_primary`, dazu „Restore Defaults“. Jede Änderung wird in `project_meta` gespeichert und stößt eine Neugruppierung an; die Antworten auf OPEN_QUESTIONS #24 und #28 bis #30 sind damit Einstellungen, keine Codeänderungen (ADR 0023).
 
-**Sammelaktionen:** „Apply Auto-Selection to All“, „Select All CT ≤ 3 mm“, „Save Selection as Cohort“.
+**Kernel-Klassen** (Listen unverändert aus `KernelTable.swift` von BOCARTA-MOOSE, ADR 0012): Der Hersteller kommt aus Manufacturer (SIEMENS, GE als eigenes Wort oder GENERAL ELECTRIC, PHILIPS, CANON oder TOSHIBA), der Kernel ist der erste Wert von ConvolutionKernel, kleingeschrieben. Ein Code passt bei Gleichheit oder, ab 3 Zeichen, mit einem angehängten Buchstaben aus `fsdhqr`. Geprüft wird wie in BOCARTA-MOOSE zuerst die Sharp-Liste des Herstellers, dann seine Soft-Liste, dann alle Sharp-Listen, dann alle Soft-Listen; alles andere ist unknown. Drei Abweichungen von BOCARTA-MOOSE, begründet in ADR 0023: Philips-Codes passen nur exakt; ohne ConvolutionKernel ist die Klasse unknown, ohne Rückgriff auf Wörter der Beschreibung; GE muss ein eigenes Wort sein, nicht nur der Anfang des Herstellernamens.
 
-**Prüfungen vor dem Start (Warnung, kein Abbruch):** ungleichmäßige Schichtabstände oder Lücken laut ImagePositionPatient, Gantry-Tilt, gemischte Bildgrößen, nicht unterstützte Transfer Syntax, zu wenige Schichten.
+| Hersteller | soft | sharp |
+| --- | --- | --- |
+| Siemens | b08 b10 b19 b20 b26 b30 b31 b35 b40 b41 br32 br34 br36 br38 br40 br44 i26 i30 i31 i36 i40 i41 qr36 qr40 sa36 sa40 bf37 bf40 bv36 bv40 | b45 b46 b50 b60 b70 b75 b80 bl57 bl64 br49 br54 br59 br64 br69 i50 i70 bv49 bv59 hr40 hr49 hr59 hr64 hr68 qr49 qr59 qr69 u70 u90 s80 y80 |
+| GE | standard stnd std soft | bone boneplus bonesplus lung detail edge chest chst |
+| Philips (exakt) | a b c d smooth standard | l ya yb yc yd e ea eb ec ub uc ud sharp detail bone lung |
+| Canon | fc01 fc02 fc03 fc07 fc08 fc11 fc12 fc13 fc14 fc17 fc18 fc21 fc22 fc26 | fc30 fc31 fc35 fc50 fc51 fc52 fc53 fc55 fc56 fc80 fc81 fc82 fc86 |
+
+**Sammelaktionen:** „Apply Auto-Selection to All“, „Select All CT ≤ 3 mm“, „Save Selection as Cohort“. „Select All CT ≤ n mm“ (Standard 3 mm, Toleranz 0,02 mm) fügt nur geeignete CT-Serien hinzu, entfernt nichts und ändert keine bestehende Primary. Eine Kohorte speichert die ausgewählten Serien mit ihrem Primary-Flag; „Apply Cohort“ ersetzt die ganze Auswahl. Untersuchungen eines Patienten, dessen Kennung aus dem Ordnernamen noch nicht bestätigt ist, werden nie ausgewählt (ADR 0023, 0024).
+
+**Prüfungen vor dem Start (Warnung, kein Abbruch):** ungleichmäßige Schichtabstände oder Lücken laut ImagePositionPatient, Gantry-Tilt, gemischte Bildgrößen, nicht unterstützte Transfer Syntax, zu wenige Schichten. Jede Prüfung ist ein Code mit Parametern; nur die Eignungsregeln der Auto-Auswahl wirken auf die Auswahl, Warnungen zählen erst im fünften Rangschritt (ADR 0022, 0023).
 
 **Sonderfälle**
 
-- Anonymisierte Daten ohne PatientID: Kennung aus dem Ordnernamen, vom Nutzer bestätigt.
-- Enhanced/Multiframe-CT.
+- Anonymisierte Daten ohne PatientID: Kennung aus dem Ordnernamen, vom Nutzer bestätigt. Platzhalter wie ANONYMOUS zählen als fehlende PatientID. Der Index schlägt die Ordnerebenen 0 bis 3 vor; die Ordnernamen bleiben im Katalog und werden erst mit der Bestätigung zu einer Verknüpfung (ADR 0024).
+- Enhanced/Multiframe-CT: Geometrie je Frame aus den Functional Groups; eine Datei wird nie getrennt.
 - Sehr große Ordner: 100 000 Dateien mit Fortschritt und Abbruch.
-- Unlesbare Dateien: überspringen und protokollieren.
-- NIfTI-Import mit Namenskonvention `CT_<id>.nii.gz` oder manueller Zuordnung.
+- Unlesbare Dateien: überspringen und als Code zählen, ohne Pfad und ohne Fehlermeldung in Logs und Meldungen. „Show Files…“ zeigt die relativen Pfade unlesbarer Dateien, nicht geöffneter Archive, nicht verfolgter Links und nicht lesbarer Ordner auf Wunsch aus dem Katalog an, ohne sie in `project.sqlite` oder ein Log zu schreiben (ADR 0024).
+- NIfTI-Import mit Namenskonvention `CT_<id>.nii[.gz]` oder `PT_<id>.nii[.gz]` oder manueller Zuordnung. Jede Datei ist eine Untersuchung mit aus dem Inhalt abgeleiteten UIDs; andere Namen erhalten die Modalität OT und werden nie automatisch ausgewählt (ADR 0022).
+- Nach „Remove Identifiers“ fragt der Index keine Kennungs-Tags mehr ab; bekannte Untersuchungen werden weiter aktualisiert, neue abgewiesen und gezählt (ADR 0024, OPEN_QUESTIONS #26).
+- Ändert sich die PatientID in den Dateien einer bekannten Untersuchung, behält sie ihren Patienten; die Warnung `check.patient_link_changed` meldet es, und der Nutzer ordnet die Untersuchung von Hand neu zu (ADR 0024).
 
-**PET/CT-Paare** (gleiche Untersuchung und FrameOfReferenceUID) werden schon jetzt erkannt und gespeichert, auch wenn die SUV-Auswertung erst in Phase 2 kommt.
+**PET/CT-Paare** (gleiche Untersuchung und gleiche, nicht leere FrameOfReferenceUID mit z-Überlappung; nie über Seriennummer oder Beschreibung) werden schon jetzt erkannt und mit z-Überlappung und Schwächungskorrektur der PET (CorrectedImage enthält ATTN) gespeichert, auch wenn die SUV-Auswertung erst in Phase 2 kommt (ADR 0022).
 
 ## 8. Segmentierungs-Pipeline und Batch-Warteschlange
 
@@ -456,7 +491,9 @@ Jede Serie erhält einen QC-Status, einzelne fehlerhafte Labels lassen sich auss
 
 **Provenienz je Job:** Start, Ende, Dauer, tatsächlich genutztes Gerät, Warnungen.
 
-**Audit-Log:** Import, Auswahländerungen, Läufe, QC-Änderungen (wer, wann) und Exporte (Umfang, Ziel, SHA-256 der Datei).
+**Provenienz der Auswahl:** Jede Serie trägt ihre Herkunft (`selection_origin`: auto, user, bulk_thin_ct oder cohort) und ihre Begründung als Codes mit Parametern, jede Untersuchung ihren Auswahlmodus (ADR 0023).
+
+**Audit-Log:** Import, Auswahländerungen, Läufe, QC-Änderungen (wer, wann) und Exporte (Umfang, Ziel, SHA-256 der Datei). Der Import schreibt die Aktionen `index_merged`, `selection_changed`, `ids_confirmed`, `studies_assigned` und `patients_created`, jeweils nur mit Zählungen.
 
 **Reproduzierbarkeits-Paket:** ZIP mit `provenance.json`, Labeltabellen, Metriken im Long-Format, QC-Tabelle, Export-Einstellungen, Methodentext und Lizenzhinweisen. Es enthält keine Bilder und keine Klartext-Kennungen und eignet sich als Supplement einer Publikation.
 
@@ -471,10 +508,15 @@ Patientendaten verlassen den Mac nie: kein Netzwerk-Entitlement, keine Namen in 
 **Datenschutz**
 
 - Datenminimierung: Namen, Geburtsdaten und Adressen werden nicht gespeichert; Alter und Geschlecht werden abgeleitet.
-- Klartext-Kennungen (PatientID, Accession Number) liegen nur in der Tabelle `identifiers`. Die Funktion „Remove Identifiers“ löscht sie unwiderruflich.
+- Klartext-Kennungen (PatientID, Accession Number) liegen in `project.sqlite` nur in der Tabelle `identifiers`. Untersuchungen finden ihren Patienten über HMAC-SHA-256 der PatientID mit einem zufälligen Schlüssel je Projekt (`link_key`); ein Ordnername wird erst nach Bestätigung durch den Nutzer zu einer solchen Verknüpfung (ADR 0024).
+- Der Index-Katalog `index/catalog.sqlite` hält relative Dateipfade, die aus den Dateien gelesenen Klartext-Kennungen (`pending_identifiers`), die der Merge nach `identifiers` übernimmt und die bis zum Löschen des Katalogs dort bleiben, die Verknüpfungen und die Ordnernamen der Kandidaten. Relative Pfade und Ordnernamen enthalten Patientennamen, wo die Ordnernamen sie enthalten. Er ist ein löschbarer Cache im Projektordner (OPEN_QUESTIONS #25).
+- `project.sqlite` enthält keine Pfade einzelner Quelldateien. Ausnahmen: Das Security-Scoped Bookmark jeder Quelle enthält den absoluten Pfad des Quellordners samt Ordnernamen in lesbarer Form und bleibt, solange es die Quelle gibt, auch nach „Remove Identifiers“, weil ohne es kein Rescan möglich ist; `display_path` hält den Namen des Quellordners; `jobs.log_path` ist der Pfad eines Logs im Projektordner. Ist ein Quellordner nach einem Patienten benannt, steht dessen Name damit in `project.sqlite` (OPEN_QUESTIONS #25).
+- Die Funktion „Remove Identifiers“ löscht unwiderruflich `identifiers`, die Verknüpfungen und den Schlüssel (mit `secure_delete`, im WAL-Modus mit Checkpoint), dazu den ganzen Katalog, die Vorschaubilder und die Job-Dateien. Sie ist gesperrt, solange ein Scan, eine Neugruppierung oder ein Export läuft. Exporte unter `exports/`, die PatientIDs oder die Zuordnungstabelle enthalten, listet sie vorher auf und löscht sie nur, wenn der Nutzer es wählt; Kopien außerhalb des Projektordners erreicht sie nicht. Danach fragt der Index keine Kennungs-Tags mehr ab; neue Untersuchungen werden abgewiesen und gezählt, bekannte weiter aktualisiert (OPEN_QUESTIONS #26). Das Löschen einer Datei auf APFS ist kein sicheres Überschreiben.
 - Pseudonyme P0001 … je Projekt. Die Zuordnungstabelle wird nur auf ausdrücklichen Wunsch und mit Warnung exportiert.
 - DICOM-UIDs erscheinen im Export nur als HMAC-SHA-256 mit Projektschlüssel, denn UIDs sind re-identifizierbar.
-- Logs, Fehlermeldungen und Prozessargumente enthalten nur interne Schlüssel und Pseudonyme, keine Pfade. Ordnernamen enthalten oft Patientennamen.
+- Logs, Fehlermeldungen und Prozessargumente enthalten nur interne Schlüssel und Pseudonyme, keine Pfade. Ordnernamen enthalten oft Patientennamen. Events, Ergebnisse, Logs und Audit-Einträge des Index enthalten nur Zählungen und Codes, Tracebacks des Index-Jobs nur Frames ohne Meldung.
+- Job-Dateien enthalten absolute Quellpfade und den Verknüpfungsschlüssel; sie entstehen mit Modus 0600 und werden am Ende des Jobs und beim Start der App gelöscht.
+- Das Privacy Manifest nennt für Dateizeitstempel neben C617.1 den Grund 3B52.1, weil der Index die Änderungszeiten von Dateien in Ordnern liest, die der Nutzer freigegeben hat.
 - Keine Telemetrie, keine Analytics, keine eigenen Absturz-Uploads.
 - Empfehlung in der App: Projekte auf FileVault-verschlüsselten Datenträgern ablegen.
 - Fallbericht (ADR 0017): als Kennung nur das Pseudonym, nie eine PatientID; als Voreinstellung Tage seit erster Untersuchung (Jahr als Option, volles Datum nur mit Warnung), Alter in ganzen Jahren und Geschlecht wie erfasst; Dateiname nach festem Muster; PDF-Metadaten ohne Patientenfelder; Ablage unter `exports/`, „Save a Copy…“ mit Warnung bei iCloud-, Netz- oder Wechseldatenträgern; Drucken aus der Vorschau-App, ohne die Berechtigung `com.apple.security.print`; Bilder ohne Gesicht, weder von vorn noch im Profil. Kein Versand an PACS, per Mail oder in die iCloud, kein DICOM-Encapsulated-PDF, kein JavaScript, keine Formulare und keine Anhänge im PDF.
@@ -571,6 +613,9 @@ Getestet wird auf drei Ebenen: Korrektheit des Codes, technische Äquivalenz zu 
 | Sandbox und Offline | signierter Build | Netzwerk- und Dateizugriffe protokollieren | keine Verbindung, keine Schreibzugriffe außerhalb erlaubter Orte |
 | Leistung | Laufzeit je Modell, RAM-Spitze, Scroll-Rate | M1 mit 16 GB als Mindestgerät, größere Macs | Werte in `docs/benchmarks.md` |
 | UI | Import → Lauf → QC → Export | XCUITest | Ablauf ohne Fehler |
+| Import | Gruppierung, Teilserien, Duplikate, Auswahl, Begründungen, Prüfungen, Merge (ADR 0020–0025) | synthetischer Korpus aus `Worker/tests/dicom_factory.py` (nur pydicom, deterministische UIDs); Merge- und Auswahl-SQL aus den Swift-Konstanten in pytest | Ergebnis gleich `corpus_expected.json` (Patienten, Untersuchungen, Teilserien, Auswahl, Begründungscodes und Prüfungen je Objekt); Kriterium erst nach Durchsicht der Datei durch den Auftraggeber (ADR 0026) |
+| Import-Leistung | Scan, unveränderter Rescan, Merge | Linux-CI mit 10 000 Dateien; langsamer Job (`-m slow`) mit 100 000 Dateien; auf dem macOS-Runner eine Sandbox-Probe mit 100 000 Dateien, deren Korpus das gebündelte Python im App-Container erzeugt | 10 000 Dateien: voller Scan < 60 s, Rescan < 2 s, Merge < 1 s; 100 000 Dateien: voller Scan ≤ 150 s, Rescan ≤ 10 s, Neugruppierung ≤ 20 s, Spitzen-RSS ≤ 500 MB, Abbruch beantwortet in ≤ 2 s, Fortsetzen liest nur den Rest; Grundlage jedes Budgets in ADR 0026, Neugruppierung, Spitzen-RSS und Abbruch noch ungemessen; Werte in `docs/benchmarks.md` |
+| Import Ende-zu-Ende | öffentlicher IDC-Fall ACRIN-NSCLC-FDG-PET-002 (4 Untersuchungen, 14 Serien, 1 958 Dateien) | `Scripts/ci/real_case.sh` lädt ihn nur in CI; Linux ohne Sandbox, macOS-Runner mit sandboxed Worker und Swift-Merge | Erwartungen nur mit Zählungen und Beschreibungen, ohne UIDs, in `Scripts/ci/acrin_expected.json`; sie werden erst nach Durchsicht durch den Auftraggeber zum Kriterium |
 | Fallbericht | Inhaltsdatei und PDF (ADR 0017) | pytest am öffentlichen Fall; Swift Testing auf dem macOS-Runner, PDF per PDFKit zurückgelesen | jede Zahl gleich der Exportzeile; Forschungshinweis auf jeder Seite; jedes Label jedes Modells mit englischem Namen; Text englisch auch bei deutscher Systemsprache |
 
 **Testdaten:** nur synthetische Phantome (per Skript erzeugt) und öffentliche Datensätze mit dokumentierter Lizenz, z. B. TCIA-Sammlungen (Lizenz je Sammlung prüfen). Echte Patientendaten gehören nie ins Repository oder in CI.
@@ -594,8 +639,8 @@ Die Umsetzung beginnt mit vier Spikes zu den größten technischen Risiken; Feat
    - Ergebnis: ADRs und eine Go/No-Go-Notiz; bei No-Go Alternativen vorschlagen, z. B. nur DMG oder Daten in den Container kopieren.
 2. **M1 – Fundament:** Repo-Struktur, XcodeGen, Build-Skripte, IPC v1, Datenbankschema mit Migrationen, Logging, CI.
    - Akzeptanz: `make all` baut reproduzierbar eine signierte App; `selftest` ist grün; der Lizenzbericht wird erzeugt.
-3. **M2 – Import:** Quellordner, Indexierung, Baum, Filter, Auto-Auswahl, Vorschaubilder, Warnungen.
-   - Akzeptanz: Testkorpus korrekt gruppiert; jede Auswahl begründet; 100 000 Dateien mit Fortschritt und Abbruch.
+3. **M2 – Import:** Quellordner, Indexierung, Baum, Filter, Auto-Auswahl mit ihren Einstellungen, Vorschaubilder, Warnungen (ADR 0020–0026); begonnen vor dem Go von S3 (ADR 0019).
+   - Akzeptanz: Der synthetische Testkorpus ergibt genau `corpus_expected.json`, nachdem der Auftraggeber die Datei durchgesehen hat; jede Serie hat eine Begründung, auch jede von Hand, per Sammelaktion oder aus einer Kohorte gewählte; 100 000 Dateien innerhalb der Budgets aus Abschnitt 16, mit Fortschritt, Abbruch und Fortsetzen; ein Lauf auf dem Mac des Auftraggebers mit einem echten Ordner, bei dem keine Daten den Mac verlassen (ADR 0026).
 4. **M3 – Pipeline und Warteschlange:** Konvertierung, Segmentierung, Metriken, Viewer-Cache, Persistenz, Retry, Abbruch, Provenienz.
    - Akzeptanz: Batch über mindestens 10 Serien; eine fehlerhafte Serie stoppt den Batch nicht; ein Neustart setzt fort; Äquivalenztest bestanden.
 5. **M4 – Viewer:** drei Ebenen, Orientierung, Fensterung, Overlays je Modell und Label, Deckkraft, Kontur, Cursor-Infos.

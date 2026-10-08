@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+from bcoa_worker import worker
 from bcoa_worker.channel import ProtocolChannel
 from bcoa_worker.errors import JobFailure
 from bcoa_worker.protocol import Job, Log, parse_event
@@ -142,3 +144,43 @@ def test_scratch_is_removed_after_the_job(tmp_path: Path) -> None:
     job = _job(tmp_path)
     run_job(job, ProtocolChannel(io.StringIO()), {"selftest": leave_files})
     assert not scratch_dir(job).exists()
+
+
+def test_each_job_imports_only_its_own_module(tmp_path: Path) -> None:
+    # bcoa_worker.index blocks `requests` for the whole process, and real
+    # moosez imports it at module level: a segment or selftest job that
+    # imported the index package, as one eager import line for every kind
+    # would, fails at `import moosez`. A stand-in `requests` is installed so
+    # that a block shows as an ImportError.
+    site = tmp_path / "site"
+    (site / "requests").mkdir(parents=True)
+    (site / "requests" / "__init__.py").write_text("LOADED = True\n")
+    script = """
+import importlib, sys
+from bcoa_worker import worker
+handlers = worker._handlers()
+assert set(handlers) == set(worker._JOB_MODULES), handlers
+assert not [m for m in sys.modules if m.startswith("bcoa_worker.jobs")], "imported eagerly"
+for module in worker._JOB_MODULES.values():
+    importlib.import_module(module)
+assert "bcoa_worker.index" not in sys.modules
+import requests
+print(requests.LOADED)
+"""
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(site), str(WORKER_ROOT)])}
+    out = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, env=env, check=False
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "True"
+
+
+def test_a_job_module_that_fails_to_import_is_reported(tmp_path: Path) -> None:
+    # Imported inside run_job, a broken module ends the job with an error
+    # event instead of a worker that dies before saying anything.
+    buffer = io.StringIO()
+    handler = worker._lazy("bcoa_worker.jobs.no_such_job")
+    assert run_job(_job(tmp_path), ProtocolChannel(buffer), {"selftest": handler}) == 1
+    error, done = _events(buffer)[-2:]
+    assert error["code"] == "internal_error"
+    assert done["status"] == "failed"

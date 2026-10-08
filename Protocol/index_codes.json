@@ -1,0 +1,598 @@
+{
+  "description": "Every code the index job, the merge and the selection write (ADR 0020 to ADR 0025), with the US-English default text the app renders through the String Catalog. Logs, events, results and the database carry these codes and their parameters, never prose. `{name}` in a text is a parameter: for checks and reasons it comes from params_json, for status lines and source states the app supplies it.",
+  "groups": {
+    "read": {
+      "description": "files.code of a file of kind unreadable, and the keys of check.unreadable_files by_code.",
+      "codes": [
+        {"code": "read.permission_denied"},
+        {"code": "read.io_error"},
+        {"code": "read.invalid_dicom"},
+        {"code": "read.unsupported"}
+      ]
+    },
+    "bad_dir": {
+      "description": "bad_dirs.code: a folder the walk could not list.",
+      "codes": [
+        {"code": "permission_denied"},
+        {"code": "io_error"}
+      ]
+    },
+    "source": {
+      "description": "Summary codes of a scan of one source (scans.summary_json, the result's sources).",
+      "codes": [
+        {"code": "source.empty_walk"}
+      ]
+    },
+    "select": {
+      "description": "selection_reason codes. chosen, eligible, excluded and held are the outcome.",
+      "codes": [
+        {
+          "code": "select.chosen.only_candidate",
+          "params": [],
+          "text": "Chosen automatically: the only series in this study that qualifies."
+        },
+        {
+          "code": "select.chosen.coverage",
+          "params": ["coverage"],
+          "text": "Chosen automatically: it covers the most ({coverage} mm along the body axis)."
+        },
+        {
+          "code": "select.chosen.thinnest",
+          "params": ["thickness"],
+          "text": "Chosen automatically: the thinnest slices ({thickness} mm) among the series with the largest coverage."
+        },
+        {
+          "code": "select.chosen.kernel",
+          "params": ["kernel"],
+          "text": "Chosen automatically: soft-tissue kernel ({kernel})."
+        },
+        {
+          "code": "select.chosen.original",
+          "params": [],
+          "text": "Chosen automatically: an original image; the alternatives are derived."
+        },
+        {
+          "code": "select.chosen.fewer_warnings",
+          "params": [],
+          "text": "Chosen automatically: fewer warnings than the alternatives."
+        },
+        {
+          "code": "select.chosen.series_number",
+          "params": ["number"],
+          "text": "Chosen automatically: the lowest series number ({number}) among otherwise equal series."
+        },
+        {
+          "code": "select.chosen.tie",
+          "params": [],
+          "text": "Chosen automatically: equal to another series in every respect; taken by its UID."
+        },
+        {
+          "code": "select.eligible.coverage",
+          "params": ["coverage", "chosen_coverage"],
+          "text": "Qualifies, but covers {coverage} mm; the chosen series covers {chosen_coverage} mm."
+        },
+        {
+          "code": "select.eligible.thicker",
+          "params": ["thickness", "chosen_thickness"],
+          "text": "Qualifies, but its slices are {thickness} mm; the chosen series has {chosen_thickness} mm."
+        },
+        {
+          "code": "select.eligible.kernel_sharp",
+          "params": ["kernel"],
+          "text": "Qualifies, but its kernel ({kernel}) is a sharp one; the chosen series has a softer kernel."
+        },
+        {
+          "code": "select.eligible.kernel_unknown",
+          "params": ["kernel"],
+          "text": "Qualifies, but its kernel ({kernel}) is not in the soft-tissue list; the chosen series has a soft-tissue kernel."
+        },
+        {
+          "code": "select.eligible.derived",
+          "params": [],
+          "text": "Qualifies, but it is derived; the chosen series is original."
+        },
+        {
+          "code": "select.eligible.warnings",
+          "params": ["count", "chosen_count"],
+          "text": "Qualifies, but it has {count} warnings; the chosen series has {chosen_count}."
+        },
+        {
+          "code": "select.eligible.series_number",
+          "params": [],
+          "text": "Qualifies; the chosen series has the lower series number."
+        },
+        {
+          "code": "select.eligible.tie",
+          "params": [],
+          "text": "Qualifies and equals the chosen series, which was taken by its UID."
+        },
+        {
+          "code": "select.excluded.not_image",
+          "params": [],
+          "text": "Not an image series (for example a dose report, structured report, segmentation or presentation state)."
+        },
+        {
+          "code": "select.excluded.secondary_capture",
+          "params": [],
+          "text": "A secondary capture (a saved screen or picture), not an acquired image."
+        },
+        {
+          "code": "select.excluded.not_ct",
+          "params": ["modality"],
+          "text": "Modality is {modality}, not CT."
+        },
+        {
+          "code": "select.excluded.image_type_missing",
+          "params": [],
+          "text": "Image Type is missing."
+        },
+        {
+          "code": "select.excluded.image_type_value",
+          "params": ["value"],
+          "text": "Image Type contains {value}."
+        },
+        {
+          "code": "select.excluded.derived",
+          "params": [],
+          "text": "A derived image (Image Type DERIVED); derived images are not chosen automatically."
+        },
+        {
+          "code": "select.excluded.not_original",
+          "params": ["value"],
+          "text": "Image Type starts with {value}, not ORIGINAL."
+        },
+        {
+          "code": "select.excluded.not_axial_image_type",
+          "params": [],
+          "text": "Image Type does not say AXIAL."
+        },
+        {
+          "code": "select.excluded.no_geometry",
+          "params": [],
+          "text": "Slice positions or orientation are missing or invalid, so the coverage cannot be measured."
+        },
+        {
+          "code": "select.excluded.not_axial",
+          "params": ["orientation"],
+          "text": "The slices are {orientation}, not axial."
+        },
+        {
+          "code": "select.excluded.mixed_frames",
+          "params": [],
+          "text": "The frames of a multi-frame file differ in orientation or size."
+        },
+        {
+          "code": "select.excluded.description",
+          "params": ["term"],
+          "text": "The description matches the excluded term \"{term}\"."
+        },
+        {
+          "code": "select.excluded.too_few_slices",
+          "params": ["count", "minimum"],
+          "text": "{count} slices; automatic selection needs at least {minimum}."
+        },
+        {
+          "code": "select.excluded.truncated",
+          "params": ["count"],
+          "text": "{count} files end before their pixel data does."
+        },
+        {
+          "code": "select.excluded.missing_pixels",
+          "params": ["count"],
+          "text": "{count} files contain no pixel data."
+        },
+        {
+          "code": "select.excluded.transfer_syntax",
+          "params": ["syntax"],
+          "text": "Stored as {syntax}, which the converter cannot read."
+        },
+        {
+          "code": "select.excluded.nifti_not_3d",
+          "params": [],
+          "text": "The NIfTI file is not a single 3D volume."
+        },
+        {
+          "code": "select.excluded.nifti_unnamed",
+          "params": [],
+          "text": "A NIfTI file named outside the CT_<id> convention; assign a patient and select it by hand."
+        },
+        {
+          "code": "select.held.unconfirmed_patient",
+          "params": [],
+          "text": "Not selected until the patient ID taken from the folder name is confirmed."
+        }
+      ]
+    },
+    "status": {
+      "description": "The status line of a series, from selection_origin, selected and the patient's status; and the primary badge.",
+      "codes": [
+        {"code": "status.auto.selected", "params": [], "text": "Selected automatically"},
+        {"code": "status.auto.not_selected", "params": [], "text": "Not selected"},
+        {"code": "status.user.selected", "params": [], "text": "Selected by you"},
+        {"code": "status.user.deselected", "params": [], "text": "Deselected by you"},
+        {"code": "status.bulk.selected", "params": [], "text": "Added by \"Select All CT ≤ … mm\""},
+        {
+          "code": "status.cohort.selected",
+          "params": ["label"],
+          "text": "Selected from the cohort \"{label}\""
+        },
+        {
+          "code": "status.cohort.not_selected",
+          "params": ["label"],
+          "text": "Not in the cohort \"{label}\""
+        },
+        {
+          "code": "status.held",
+          "params": [],
+          "text": "Not selected until the patient ID is confirmed"
+        },
+        {"code": "status.gone", "params": [], "text": "No longer in the source folders"},
+        {"code": "badge.primary", "params": [], "text": "Primary"}
+      ]
+    },
+    "check": {
+      "description": "index_checks and cat_checks rows: object kind, level and the keys of params_json.",
+      "codes": [
+        {
+          "code": "check.too_few_slices",
+          "object": "series",
+          "level": "warning",
+          "params": ["count", "minimum"],
+          "text": "{count} slices (fewer than {minimum})."
+        },
+        {
+          "code": "check.gap",
+          "object": "series",
+          "level": "warning",
+          "params": ["gaps", "missing", "largest_mm"],
+          "text": "{gaps} gaps in the slice positions; about {missing} slices are missing."
+        },
+        {
+          "code": "check.uneven_spacing",
+          "object": "series",
+          "level": "warning",
+          "params": ["deviation_mm"],
+          "text": "Slice spacing varies by up to {deviation_mm} mm."
+        },
+        {
+          "code": "check.duplicate_positions",
+          "object": "series",
+          "level": "warning",
+          "params": ["count"],
+          "text": "{count} slices share a position with another slice."
+        },
+        {
+          "code": "check.gantry_tilt",
+          "object": "series",
+          "level": "warning",
+          "params": ["degrees"],
+          "text": "Gantry tilt of {degrees}°; the slices are sheared."
+        },
+        {
+          "code": "check.tilt_tag_only",
+          "object": "series",
+          "level": "info",
+          "params": ["degrees"],
+          "text": "The gantry tilt tag says {degrees}°, but the slice positions show no tilt."
+        },
+        {
+          "code": "check.oblique",
+          "object": "series",
+          "level": "info",
+          "params": ["degrees"],
+          "text": "The slices are tilted {degrees}° from the nearest standard plane."
+        },
+        {
+          "code": "check.no_geometry",
+          "object": "series",
+          "level": "warning",
+          "params": [],
+          "text": "Slice positions or orientation are missing or invalid."
+        },
+        {
+          "code": "check.split",
+          "object": "series",
+          "level": "info",
+          "params": ["reason"],
+          "text": "Split from a series with changing {reason}."
+        },
+        {
+          "code": "check.enhanced_mixed_frames",
+          "object": "series",
+          "level": "warning",
+          "params": [],
+          "text": "The frames of a multi-frame file differ in orientation or size."
+        },
+        {
+          "code": "check.unsupported_transfer_syntax",
+          "object": "series",
+          "level": "warning",
+          "params": ["syntax"],
+          "text": "Stored as {syntax}, which the converter cannot read."
+        },
+        {
+          "code": "check.truncated",
+          "object": "series",
+          "level": "warning",
+          "params": ["count"],
+          "text": "{count} files end before their pixel data does."
+        },
+        {
+          "code": "check.missing_pixel_data",
+          "object": "series",
+          "level": "warning",
+          "params": ["count"],
+          "text": "{count} files contain no pixel data."
+        },
+        {
+          "code": "check.no_rescale",
+          "object": "series",
+          "level": "warning",
+          "params": [],
+          "text": "No rescale slope or intercept; the values may not be Hounsfield units."
+        },
+        {
+          "code": "check.values_vary",
+          "object": "series",
+          "level": "info",
+          "params": [],
+          "text": "Rescale values differ between slices."
+        },
+        {
+          "code": "check.non_square_pixels",
+          "object": "series",
+          "level": "info",
+          "params": ["row_mm", "col_mm"],
+          "text": "Pixels are not square ({row_mm} × {col_mm} mm)."
+        },
+        {
+          "code": "check.duplicates",
+          "object": "series",
+          "level": "info",
+          "params": ["count"],
+          "text": "{count} files were found more than once; each is counted once."
+        },
+        {
+          "code": "check.uid_conflict",
+          "object": "series",
+          "level": "warning",
+          "params": ["count"],
+          "text": "{count} files share an instance UID with a file of another series."
+        },
+        {
+          "code": "check.dicomdir_incomplete",
+          "object": "series",
+          "level": "warning",
+          "params": ["missing"],
+          "text": "The DICOMDIR lists {missing} images of this series that were not found."
+        },
+        {
+          "code": "check.burned_in_annotation",
+          "object": "series",
+          "level": "info",
+          "params": [],
+          "text": "Marked as containing burned-in text; no preview is shown."
+        },
+        {
+          "code": "check.nifti_unnamed",
+          "object": "series",
+          "level": "info",
+          "params": [],
+          "text": "Named outside the CT_<id> convention; assign a patient and select it by hand."
+        },
+        {
+          "code": "check.pet_units",
+          "object": "series",
+          "level": "info",
+          "params": ["units"],
+          "text": "PET values are in {units}, not Bq/mL."
+        },
+        {
+          "code": "check.pet_no_dose",
+          "object": "series",
+          "level": "info",
+          "params": [],
+          "text": "The injected dose or its time is missing; SUV cannot be computed."
+        },
+        {
+          "code": "check.pet_no_weight",
+          "object": "series",
+          "level": "info",
+          "params": [],
+          "text": "The patient's weight is missing; SUV cannot be computed."
+        },
+        {
+          "code": "check.pet_not_decay_corrected",
+          "object": "series",
+          "level": "info",
+          "params": ["value"],
+          "text": "Not decay corrected ({value})."
+        },
+        {
+          "code": "check.pet_not_attenuation_corrected",
+          "object": "series",
+          "level": "info",
+          "params": [],
+          "text": "Not attenuation corrected."
+        },
+        {
+          "code": "check.no_eligible_series",
+          "object": "study",
+          "level": "info",
+          "params": [],
+          "text": "No series in this study qualifies for automatic selection."
+        },
+        {
+          "code": "check.study_patient_conflict",
+          "object": "study",
+          "level": "warning",
+          "params": ["count"],
+          "text": "The files of this study carry {count} different patient IDs."
+        },
+        {
+          "code": "check.issuer_conflict",
+          "object": "study",
+          "level": "info",
+          "params": ["count"],
+          "text": "The patient ID comes from {count} different issuers."
+        },
+        {
+          "code": "check.age_conflict",
+          "object": "study",
+          "level": "info",
+          "params": [],
+          "text": "Patient Age and the age from the birth date differ by more than a year."
+        },
+        {
+          "code": "check.new_series_since_manual",
+          "object": "study",
+          "level": "info",
+          "params": ["count", "would_be_chosen"],
+          "text": "{count} new series arrived since you chose by hand.",
+          "variants": {
+            "would_be_chosen": "{count} new series arrived since you chose by hand, and the automatic selection would now choose one of them."
+          }
+        },
+        {
+          "code": "check.primary_gone",
+          "object": "study",
+          "level": "warning",
+          "params": [],
+          "text": "The primary series is no longer in the source folders; the automatic selection applies again."
+        },
+        {
+          "code": "check.sex_conflict",
+          "object": "patient",
+          "level": "warning",
+          "params": ["values"],
+          "text": "The studies record different sexes ({values}); sex is left empty."
+        },
+        {
+          "code": "check.age_inconsistent",
+          "object": "patient",
+          "level": "warning",
+          "params": ["studies"],
+          "text": "The ages recorded in {studies} studies do not fit one birth date."
+        },
+        {
+          "code": "check.unreadable_files",
+          "object": "source",
+          "level": "info",
+          "params": ["count", "by_code"],
+          "text": "{count} files could not be read."
+        },
+        {
+          "code": "check.not_dicom",
+          "object": "source",
+          "level": "info",
+          "params": ["count"],
+          "text": "{count} files are neither DICOM nor NIfTI."
+        },
+        {
+          "code": "check.archives_skipped",
+          "object": "source",
+          "level": "info",
+          "params": ["count"],
+          "text": "{count} archives were not opened; extract them to include their contents."
+        },
+        {
+          "code": "check.symlinks_skipped",
+          "object": "source",
+          "level": "info",
+          "params": ["count"],
+          "text": "{count} symbolic links were not followed."
+        },
+        {
+          "code": "check.bad_dirs",
+          "object": "source",
+          "level": "warning",
+          "params": ["count"],
+          "text": "{count} folders could not be opened."
+        },
+        {
+          "code": "check.files_changing",
+          "object": "source",
+          "level": "info",
+          "params": ["count"],
+          "text": "{count} files changed while being read; they are read again at the next scan."
+        },
+        {
+          "code": "check.new_studies_not_added",
+          "object": "project",
+          "level": "warning",
+          "params": ["count"],
+          "text": "{count} new studies were not added because identifiers were removed from this project."
+        }
+      ]
+    },
+    "preview": {
+      "description": "Why a part has no preview (the previews result).",
+      "codes": [
+        {
+          "code": "preview.skipped.burned_in",
+          "text": "No preview: marked as containing burned-in text"
+        },
+        {"code": "preview.skipped.screen_save", "text": "No preview: a saved screen"},
+        {
+          "code": "preview.skipped.secondary_capture",
+          "text": "No preview: a secondary capture, not an acquired image"
+        },
+        {"code": "preview.skipped.not_image", "text": "No preview: not an image series"},
+        {
+          "code": "preview.skipped.truncated",
+          "text": "No preview: the files end before their pixel data does"
+        },
+        {"code": "preview.failed.decode", "text": "No preview: the image could not be decoded"}
+      ]
+    },
+    "error": {
+      "description": "error events of an index job.",
+      "codes": [
+        {"code": "index_failed", "recoverable": false},
+        {"code": "catalog_busy", "recoverable": true},
+        {"code": "link_key_mismatch", "recoverable": false}
+      ]
+    },
+    "split_reason": {
+      "description": "Values of the reason parameter of check.split.",
+      "codes": [
+        {"code": "sop_class", "text": "object type"},
+        {"code": "orientation", "text": "orientation"},
+        {"code": "size", "text": "image size"},
+        {"code": "pixel_spacing", "text": "pixel spacing"},
+        {"code": "acquisition", "text": "acquisition, phase or echo"},
+        {"code": "stack", "text": "stack"}
+      ]
+    },
+    "orientation": {
+      "description": "Values of the orientation parameter of select.excluded.not_axial.",
+      "codes": [
+        {"code": "orientation.coronal", "text": "coronal"},
+        {"code": "orientation.sagittal", "text": "sagittal"},
+        {"code": "orientation.oblique", "text": "oblique"}
+      ]
+    },
+    "transfer_syntax": {
+      "description": "Names for the syntax parameter; any other syntax is shown by its UID.",
+      "codes": [
+        {"code": "1.2.840.10008.1.2.1.99", "text": "Deflated Explicit VR Little Endian"},
+        {"code": "1.2.840.10008.1.2.4.51", "text": "JPEG Extended (12-bit)"}
+      ]
+    },
+    "source_state": {
+      "description": "sources.state.",
+      "codes": [
+        {"code": "new", "params": [], "text": "Not indexed yet"},
+        {"code": "indexing", "params": [], "text": "Indexing…"},
+        {"code": "indexed", "params": ["date"], "text": "Indexed {date}"},
+        {
+          "code": "interrupted",
+          "params": [],
+          "text": "Indexing was interrupted; it continues at the next scan"
+        },
+        {"code": "unreachable", "params": [], "text": "Not connected; its series are kept"},
+        {"code": "removed", "params": []}
+      ]
+    }
+  }
+}

@@ -19,7 +19,7 @@ ignore = ["S101", "S603", "S607", "RUF001", "RUF002", "RUF003"]
 testpaths = ["tests"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["bcoa_worker", "conftest", "export_project"]
+known-first-party = ["bcoa_worker", "conftest", "export_project", "swift_sql"]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests use broad pytest.raises on purpose where the message is not the point.

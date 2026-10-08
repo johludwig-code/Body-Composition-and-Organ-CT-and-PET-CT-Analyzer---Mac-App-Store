@@ -8,6 +8,7 @@ a heartbeat going, run the one job, say done, exit. Exit codes: 0 ok, 1 failed,
 from __future__ import annotations
 
 import argparse
+import importlib
 import platform
 import shutil
 import signal
@@ -40,17 +41,30 @@ class Cancelled(Exception):
 JobHandler = Callable[[Job, ProtocolChannel], None]
 
 
-def _handlers() -> dict[str, JobHandler]:
-    # Imported lazily: a selftest must not pay for importing torch twice, and
-    # an index job must not import torch at all.
-    from bcoa_worker.jobs import export, segment, selftest, spike_s2
+# Each job imports its own module and no other's. A selftest must not pay for
+# importing torch twice, and an index job must not import torch, MOOSE or the
+# export at all. The other way round matters as much: bcoa_worker.index blocks
+# `requests` for the whole process, and moosez imports it at module level, so
+# a segment or selftest job that imported the index package would fail.
+_JOB_MODULES = {
+    "export": "bcoa_worker.jobs.export",
+    "selftest": "bcoa_worker.jobs.selftest",
+    "spike_s2": "bcoa_worker.jobs.spike_s2",
+    "segment": "bcoa_worker.jobs.segment",
+}
 
-    return {
-        "export": export.run,
-        "selftest": selftest.run,
-        "spike_s2": spike_s2.run,
-        "segment": segment.run,
-    }
+
+def _lazy(module: str) -> JobHandler:
+    # Imported when the job runs, inside run_job: the heartbeat is already
+    # going while torch loads, and a failed import ends as a reported error.
+    def run(job: Job, channel: ProtocolChannel) -> None:
+        importlib.import_module(module).run(job, channel)
+
+    return run
+
+
+def _handlers() -> dict[str, JobHandler]:
+    return {kind: _lazy(module) for kind, module in _JOB_MODULES.items()}
 
 
 def _versions() -> dict[str, str]:

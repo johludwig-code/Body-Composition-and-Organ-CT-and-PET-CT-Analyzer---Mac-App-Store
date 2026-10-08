@@ -40,3 +40,35 @@ import Testing
     #expect(left == 0)
     #expect(audited == 1)
 }
+
+@Test func v2KeepsOnePrimaryPerStudyAndOnlyASelectedOne() throws {
+    // The export takes the first primary of a study and assumes it is
+    // selected; the schema, not each statement, makes sure of both.
+    let db = try ProjectStore.inMemory()
+    try db.write { db in
+        try db.execute(sql: "INSERT INTO patients (patient_key, pseudonym) VALUES ('pt_000001', 'P0001')")
+        try db.execute(sql: """
+            INSERT INTO studies (study_key, patient_key, study_uid) VALUES ('st_000001', 'pt_000001', '2.25.1')
+            """)
+        try db.execute(sql: """
+            INSERT INTO series (series_key, study_key, series_uid, modality, image_count, fingerprint,
+                selected, is_primary)
+            VALUES ('s_000001', 'st_000001', '2.25.11', 'CT', 300, 'a', 1, 1),
+                   ('s_000002', 'st_000001', '2.25.12', 'CT', 300, 'b', 1, 0)
+            """)
+    }
+    #expect(throws: DatabaseError.self) {
+        try db.write { db in
+            try db.execute(sql: "UPDATE series SET is_primary = 1 WHERE series_key = 's_000002'")
+        }
+    }
+    #expect(throws: DatabaseError.self) {
+        try db.write { db in
+            try db.execute(sql: "UPDATE series SET selected = 0 WHERE series_key = 's_000001'")
+        }
+    }
+    let counters = try db.read { db in
+        try Int.fetchAll(db, sql: "SELECT last FROM key_counters")
+    }
+    #expect(counters == [0, 0, 0, 0])
+}

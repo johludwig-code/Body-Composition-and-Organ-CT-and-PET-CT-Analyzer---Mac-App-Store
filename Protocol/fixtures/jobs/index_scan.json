@@ -1,0 +1,94 @@
+{
+  "protocol_version": 1,
+  "job_id": "j_0201",
+  "kind": "index",
+  "project_dir": "/tmp/bcoa-fixture/Study.bcoaproj",
+  "log_path": "/tmp/bcoa-fixture/Study.bcoaproj/logs/j_0201.log",
+  "resources_dir": "/Applications/BCOAnalyzer.app/Contents/Resources",
+  "heartbeat_seconds": 10,
+  "payload": {
+    "mode": "scan",
+    "catalog": "index/catalog.sqlite",
+    "previews_dir": "index/previews",
+    "sources": [
+      {
+        "source_id": 1,
+        "root": "/Volumes/Share/Cohort A",
+        "status": "active",
+        "volume_kind": "network"
+      },
+      {"source_id": 2, "root": null, "status": "unavailable"},
+      {"source_id": 3, "root": null, "status": "removed"}
+    ],
+    "scan_sources": [1],
+    "force_reread": false,
+    "link_key": "base64:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "link_key_id": "3683c115de125163",
+    "merged_generation": 7,
+    "selection": {
+      "version": 1,
+      "min_slices": 50,
+      "coverage_tolerance_mm": 10.0,
+      "thickness_tie_mm": 0.02,
+      "thickness_floor_mm": null,
+      "kernel_before_thickness": false,
+      "accept_derived_primary": false,
+      "axial_min_abs_nz": 0.95,
+      "excluded_image_type_values": [
+        "LOCALIZER", "SCOUT", "PROJECTION IMAGE", "SCREEN SAVE", "REFORMATTED", "MPR", "MIP",
+        "MINIP", "VRT", "CPR", "CURVED", "SECONDARY"
+      ],
+      "excluded_description_terms": [
+        "topogram", "scout", "localizer", "surview", "scanogram", "dose report",
+        "patient protocol", "screen save", "mip", "minip", "mpr", "vrt", "cor", "sag", "3d"
+      ],
+      "kernels": {
+        "siemens": {
+          "soft": [
+            "b08", "b10", "b19", "b20", "b26", "b30", "b31", "b35", "b40", "b41", "br32", "br34",
+            "br36", "br38", "br40", "br44", "i26", "i30", "i31", "i36", "i40", "i41", "qr36",
+            "qr40", "sa36", "sa40", "bf37", "bf40", "bv36", "bv40"
+          ],
+          "sharp": [
+            "b45", "b46", "b50", "b60", "b70", "b75", "b80", "bl57", "bl64", "br49", "br54",
+            "br59", "br64", "br69", "i50", "i70", "bv49", "bv59", "hr40", "hr49", "hr59", "hr64",
+            "hr68", "qr49", "qr59", "qr69", "u70", "u90", "s80", "y80"
+          ]
+        },
+        "ge": {
+          "soft": ["standard", "stnd", "std", "soft"],
+          "sharp": ["bone", "boneplus", "bonesplus", "lung", "detail", "edge", "chest", "chst"]
+        },
+        "philips": {
+          "exact": true,
+          "soft": ["a", "b", "c", "d", "smooth", "standard"],
+          "sharp": [
+            "l", "ya", "yb", "yc", "yd", "e", "ea", "eb", "ec", "ub", "uc", "ud", "sharp",
+            "detail", "bone", "lung"
+          ]
+        },
+        "canon": {
+          "soft": [
+            "fc01", "fc02", "fc03", "fc07", "fc08", "fc11", "fc12", "fc13", "fc14", "fc17", "fc18",
+            "fc21", "fc22", "fc26"
+          ],
+          "sharp": [
+            "fc30", "fc31", "fc35", "fc50", "fc51", "fc52", "fc53", "fc55", "fc56", "fc80", "fc81",
+            "fc82", "fc86"
+          ]
+        }
+      },
+      "bulk_thin_ct_max_mm": 3.0
+    },
+    "identity": {
+      "placeholder_ids": [
+        "ANONYMOUS", "ANONYMIZED", "ANONYMISED", "ANON", "UNKNOWN", "NONE", "NULL", "N/A", "NA",
+        "0", "-"
+      ],
+      "folder_ids": true,
+      "folder_max_level": 3
+    },
+    "parts": [],
+    "preview": {"size_px": 256}
+  }
+}

@@ -94,6 +94,10 @@ final class AppModel {
             try FileManager.default.createDirectory(
                 at: folder.url.appendingPathComponent(directory), withIntermediateDirectories: true)
         }
+        // A worker reads its job file the moment it starts and the queue deletes
+        // it when the job ends, so what is in jobs/ now was left by a crash or a
+        // force quit, and still holds source paths (ADR 0024).
+        try? JobQueue.removeLeftoverJobFiles(projectDir: folder.url)
         project = OpenProject(folder: folder, database: try ProjectStore.open(projectFolder: folder.url))
         sources = try loadSources()
     }

@@ -1,0 +1,28 @@
+{
+  "protocol_version": 1,
+  "job_id": "j_0203",
+  "kind": "index",
+  "project_dir": "/tmp/bcoa-fixture/Study.bcoaproj",
+  "log_path": "/tmp/bcoa-fixture/Study.bcoaproj/logs/j_0203.log",
+  "resources_dir": "/Applications/BCOAnalyzer.app/Contents/Resources",
+  "heartbeat_seconds": 10,
+  "payload": {
+    "mode": "previews",
+    "catalog": "index/catalog.sqlite",
+    "previews_dir": "index/previews",
+    "sources": [
+      {
+        "source_id": 1,
+        "root": "/Volumes/Share/Cohort A",
+        "status": "active",
+        "volume_kind": "network"
+      }
+    ],
+    "parts": [
+      {"catalog_id": "3f2a9c41d7e84b0c9a6e5d1f20b47c88", "part_ref": 12},
+      {"catalog_id": "3f2a9c41d7e84b0c9a6e5d1f20b47c88", "part_ref": 13},
+      {"catalog_id": "3f2a9c41d7e84b0c9a6e5d1f20b47c88", "part_ref": 40}
+    ],
+    "preview": {"size_px": 256}
+  }
+}

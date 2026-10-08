@@ -32,8 +32,20 @@
         "stage": {"enum": ["index", "convert", "check", "segment", "metrics", "viewer_cache", "export", "selftest"]},
         "model": {"type": "string"},
         "fraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
-        "message": {"type": "string"}
+        "message": {"type": "string"},
+        "detail": {"$ref": "#/$defs/progress_detail"}
       }
+    },
+    "progress_detail": {
+      "type": "object",
+      "description": "Progress as numbers, sent by index jobs. The app renders its own localized text from it, so `message` can stay English and serve the log only.",
+      "required": ["phase", "done", "total"],
+      "properties": {
+        "phase": {"enum": ["walk", "read", "group", "previews"]},
+        "done": {"type": "integer", "minimum": 0},
+        "total": {"type": ["integer", "null"], "minimum": 0, "description": "Null while it is not known yet, as during the walk."}
+      },
+      "additionalProperties": false
     },
     "heartbeat": {
       "type": "object",
@@ -58,7 +70,7 @@
       "required": ["type", "kind", "path", "sha256"],
       "properties": {
         "type": {"const": "artifact"},
-        "kind": {"enum": ["nifti", "labelmap", "viewer_cache", "metrics", "export", "log", "report"]},
+        "kind": {"enum": ["nifti", "labelmap", "viewer_cache", "metrics", "export", "log", "report", "preview"]},
         "path": {"type": "string", "description": "Relative to the project folder."},
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       }

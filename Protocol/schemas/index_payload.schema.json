@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bcoa/index_payload.schema.json",
+  "title": "Payload of an index job, protocol version 1",
+  "description": "The `payload` of a job with kind \"index\" (ADR 0020). Source roots are the only absolute paths the worker gets, and a job file holding them or the link key is written with mode 0600 and deleted when the job ends.",
+  "type": "object",
+  "required": ["mode", "catalog", "previews_dir"],
+  "properties": {
+    "mode": {
+      "enum": ["scan", "regroup", "previews"],
+      "description": "scan walks `scan_sources`, reads headers and regroups; regroup only regroups (the selection configuration changed or a source was removed); previews renders the listed parts."
+    },
+    "catalog": {"$ref": "#/$defs/relative_path"},
+    "previews_dir": {"$ref": "#/$defs/relative_path"},
+    "sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
+    "scan_sources": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1},
+      "uniqueItems": true
+    },
+    "force_reread": {"type": "boolean"},
+    "link_key": {
+      "oneOf": [
+        {"type": "string", "pattern": "^base64:[A-Za-z0-9+/]{43}=$"},
+        {"type": "null"}
+      ],
+      "description": "\"base64:\" and the 32 key bytes. Null after Remove Identifiers: the worker then requests no identifier tags and writes no links."
+    },
+    "link_key_id": {
+      "oneOf": [{"type": "string", "pattern": "^[0-9a-f]{16}$"}, {"type": "null"}],
+      "description": "The first 16 hex characters of HMAC-SHA256(key, \"bcoa.link-key-id\"). The worker recomputes it and refuses a mismatch (error link_key_mismatch), which catches a key or an ID that was damaged or edited by hand, and nothing more: a stale payload carries the old key with its own ID, and the two agree. That is why the app fills both when the job starts rather than when it is queued, so that a job retried or resumed after Remove Identifiers runs with null (ADR 0024)."
+    },
+    "merged_generation": {"type": "integer", "minimum": 0},
+    "selection": {"$ref": "#/$defs/selection_config"},
+    "identity": {"$ref": "#/$defs/identity_config"},
+    "parts": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {"$ref": "#/$defs/part"}
+    },
+    "preview": {
+      "type": "object",
+      "required": ["size_px"],
+      "properties": {"size_px": {"type": "integer", "minimum": 16, "maximum": 1024}}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"required": ["mode"], "properties": {"mode": {"enum": ["scan", "regroup"]}}},
+      "then": {
+        "required": [
+          "sources", "scan_sources", "force_reread", "link_key", "link_key_id",
+          "merged_generation", "selection", "identity"
+        ]
+      }
+    },
+    {
+      "if": {"required": ["mode"], "properties": {"mode": {"const": "scan"}}},
+      "then": {"properties": {"scan_sources": {"minItems": 1}}}
+    },
+    {
+      "if": {"required": ["mode"], "properties": {"mode": {"const": "regroup"}}},
+      "then": {"properties": {"scan_sources": {"maxItems": 0}}}
+    },
+    {
+      "if": {"required": ["mode"], "properties": {"mode": {"const": "previews"}}},
+      "then": {
+        "required": ["sources", "parts", "preview"],
+        "properties": {"parts": {"minItems": 1}},
+        "$comment": "Previews are the most frequent index jobs and read no identifier, so their job files never carry the key.",
+        "not": {"anyOf": [{"required": ["link_key"]}, {"required": ["link_key_id"]}]}
+      }
+    },
+    {
+      "if": {"required": ["link_key"], "properties": {"link_key": {"type": "null"}}},
+      "then": {"properties": {"link_key_id": {"type": "null"}}}
+    },
+    {
+      "if": {"required": ["link_key"], "properties": {"link_key": {"type": "string"}}},
+      "then": {"required": ["link_key_id"], "properties": {"link_key_id": {"type": "string"}}}
+    }
+  ],
+  "$defs": {
+    "relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/]",
+      "description": "Relative to the project folder; the worker resolves it with Job.project_path, which refuses any path that leaves the folder."
+    },
+    "source": {
+      "type": "object",
+      "required": ["source_id", "root", "status"],
+      "properties": {
+        "source_id": {"type": "integer", "minimum": 1},
+        "root": {"type": ["string", "null"]},
+        "status": {"enum": ["active", "unavailable", "removed"]},
+        "volume_kind": {"enum": ["local", "network", "removable"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "active"}}},
+          "then": {
+            "required": ["volume_kind"],
+            "properties": {"root": {"type": "string", "pattern": "^/"}}
+          }
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["unavailable", "removed"]}}},
+          "then": {"properties": {"root": {"type": "null"}}}
+        }
+      ]
+    },
+    "part": {
+      "type": "object",
+      "required": ["catalog_id", "part_ref"],
+      "properties": {
+        "catalog_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "part_ref": {"type": "integer", "minimum": 1}
+      }
+    },
+    "selection_config": {
+      "type": "object",
+      "description": "SelectionConfig (ADR 0023). Every key is optional and takes its default when missing, so a configuration saved by an older version still decodes.",
+      "properties": {
+        "version": {"type": "integer", "minimum": 1},
+        "min_slices": {"type": "integer", "minimum": 1},
+        "coverage_tolerance_mm": {"type": "number", "minimum": 0},
+        "thickness_tie_mm": {"type": "number", "minimum": 0},
+        "thickness_floor_mm": {"type": ["number", "null"], "minimum": 0},
+        "kernel_before_thickness": {"type": "boolean"},
+        "accept_derived_primary": {"type": "boolean"},
+        "axial_min_abs_nz": {"type": "number", "minimum": 0, "maximum": 1},
+        "excluded_image_type_values": {"type": "array", "items": {"type": "string"}},
+        "excluded_description_terms": {"type": "array", "items": {"type": "string"}},
+        "kernels": {
+          "type": "object",
+          "properties": {
+            "siemens": {"$ref": "#/$defs/kernel_table"},
+            "ge": {"$ref": "#/$defs/kernel_table"},
+            "philips": {"$ref": "#/$defs/kernel_table"},
+            "canon": {"$ref": "#/$defs/kernel_table"}
+          },
+          "additionalProperties": {"$ref": "#/$defs/kernel_table"}
+        },
+        "bulk_thin_ct_max_mm": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "kernel_table": {
+      "type": "object",
+      "properties": {
+        "exact": {"type": "boolean"},
+        "soft": {"type": "array", "items": {"type": "string"}},
+        "sharp": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "identity_config": {
+      "type": "object",
+      "description": "IdentityConfig (ADR 0024). Every key is optional, as in SelectionConfig.",
+      "properties": {
+        "placeholder_ids": {"type": "array", "items": {"type": "string"}},
+        "folder_ids": {"type": "boolean"},
+        "folder_max_level": {"type": "integer", "minimum": 0, "maximum": 3}
+      }
+    }
+  }
+}

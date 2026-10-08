@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bcoa/index_result.schema.json",
+  "title": "Result payload of an index job, protocol version 1",
+  "description": "The `payload` of the `result` event of an index job. Counts and codes only: no paths, folder names, identifiers or UIDs, because the app keeps results in memory and may show them. Every object is closed (`additionalProperties: false`), so validating a result against this schema catches an extra key that would carry one.",
+  "oneOf": [
+    {"$ref": "#/$defs/changed"},
+    {"$ref": "#/$defs/unchanged"},
+    {"$ref": "#/$defs/previews"}
+  ],
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "catalog_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "changed": {
+      "type": "object",
+      "description": "A scan or regroup that wrote a new complete generation; the app merges it in the job's finalize hook.",
+      "required": [
+        "changed", "catalog_id", "generation", "sources", "files", "studies", "series",
+        "parts_split", "seconds"
+      ],
+      "properties": {
+        "changed": {"const": true},
+        "catalog_id": {"$ref": "#/$defs/catalog_id"},
+        "generation": {"type": "integer", "minimum": 1},
+        "sources": {"$ref": "#/$defs/sources"},
+        "files": {"$ref": "#/$defs/files"},
+        "studies": {"$ref": "#/$defs/count"},
+        "series": {"$ref": "#/$defs/count"},
+        "parts_split": {"$ref": "#/$defs/count"},
+        "seconds": {"$ref": "#/$defs/seconds"}
+      },
+      "additionalProperties": false
+    },
+    "unchanged": {
+      "type": "object",
+      "description": "A rescan that found no new, changed or stale file: no regroup, no new generation, no merge. Because no merge runs, `sources` is how each scanned source's state reaches the app, which applies it with the time of the result as `indexed_at`; without it a source whose share dropped (an empty walk, `source.empty_walk`) would stay `indexing` until the next launch.",
+      "required": ["changed", "sources"],
+      "properties": {
+        "changed": {"const": false},
+        "sources": {"$ref": "#/$defs/sources", "minProperties": 1},
+        "files": {"$ref": "#/$defs/files"},
+        "seconds": {"$ref": "#/$defs/seconds"}
+      },
+      "additionalProperties": false
+    },
+    "previews": {
+      "type": "object",
+      "description": "A previews job: one entry per requested part. A written preview also arrives as an `artifact` event of kind preview; a part without one carries the code the app shows a placeholder for.",
+      "required": ["catalog_id", "parts"],
+      "not": {"required": ["changed"]},
+      "properties": {
+        "catalog_id": {"$ref": "#/$defs/catalog_id"},
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["part_ref", "written"],
+            "properties": {
+              "part_ref": {"type": "integer", "minimum": 1},
+              "written": {"type": "boolean"},
+              "code": {
+                "enum": [
+                  "preview.skipped.burned_in", "preview.skipped.screen_save",
+                  "preview.skipped.secondary_capture", "preview.skipped.not_image",
+                  "preview.skipped.truncated", "preview.failed.decode"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "if": {"properties": {"written": {"const": false}}},
+            "then": {"required": ["code"]},
+            "else": {"not": {"required": ["code"]}}
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "object",
+      "description": "Keyed by source_id in decimal.",
+      "propertyNames": {"pattern": "^[1-9][0-9]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "required": ["state", "files", "bad_dirs"],
+        "properties": {
+          "state": {"enum": ["complete", "interrupted", "unreachable"]},
+          "files": {"$ref": "#/$defs/count"},
+          "bad_dirs": {"$ref": "#/$defs/count"},
+          "code": {
+            "enum": ["source.empty_walk"],
+            "description": "Why a reachable root counts as unreachable: the walk found nothing where the catalog holds files, which is how a dropped network share often looks."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "files": {
+      "type": "object",
+      "description": "Closed like every other object: a free key is a free string, and a path could hide in it.",
+      "required": [
+        "seen", "read", "unchanged", "image", "non_image", "dicomdir", "nifti", "not_dicom",
+        "unreadable", "archive", "symlink", "changing", "duplicates"
+      ],
+      "properties": {
+        "seen": {"$ref": "#/$defs/count"},
+        "read": {"$ref": "#/$defs/count"},
+        "unchanged": {"$ref": "#/$defs/count"},
+        "image": {"$ref": "#/$defs/count"},
+        "non_image": {"$ref": "#/$defs/count"},
+        "dicomdir": {"$ref": "#/$defs/count"},
+        "nifti": {"$ref": "#/$defs/count"},
+        "not_dicom": {"$ref": "#/$defs/count"},
+        "unreadable": {"$ref": "#/$defs/count"},
+        "archive": {"$ref": "#/$defs/count"},
+        "symlink": {"$ref": "#/$defs/count"},
+        "changing": {"$ref": "#/$defs/count"},
+        "duplicates": {"$ref": "#/$defs/count"}
+      },
+      "additionalProperties": false
+    },
+    "seconds": {
+      "type": "object",
+      "required": ["walk", "read", "group"],
+      "properties": {
+        "walk": {"type": "number", "minimum": 0},
+        "read": {"type": "number", "minimum": 0},
+        "group": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  }
+}
