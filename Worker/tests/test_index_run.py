@@ -94,8 +94,15 @@ def test_a_full_scan_records_every_file_of_the_corpus(corpus: Any, scanned_corpu
     assert (files["seen"], files["read"], files["unchanged"]) == (total, total, 0)
     for kind in ("image", "non_image", "dicomdir", "nifti", "not_dicom", "archive", "symlink"):
         assert files[kind] == sum(counts.get(kind, 0) for counts in wanted.values()), kind
+    # The locked folder of the permissions feature cannot be listed: one bad
+    # directory in source 1 wherever modes are enforced (not as root).
+    locked_dirs = {1: 1} if dicom_factory.PERMISSIONS in corpus.features else {}
     assert result["sources"] == {
-        str(source_id): {"state": "complete", "files": sum(counts.values()), "bad_dirs": 0}
+        str(source_id): {
+            "state": "complete",
+            "files": sum(counts.values()),
+            "bad_dirs": locked_dirs.get(source_id, 0),
+        }
         for source_id, counts in wanted.items()
     }
     with closing(connect(project)) as db:
@@ -159,9 +166,12 @@ def test_an_unchanged_rescan_reads_nothing_and_writes_no_generation(
     before = files_by_path(project)
     result = _scan(project, corpus.sources)
     seen = scanned_corpus.result["files"]["seen"]
+    # A file refused for want of permission is tried again at every scan
+    # (ADR 0027 decision 2); trying it changes nothing while it stays locked.
+    retried = 1 if dicom_factory.PERMISSIONS in corpus.features else 0
     assert result["changed"] is False
-    assert (result["files"]["seen"], result["files"]["read"]) == (seen, 0)
-    assert result["files"]["unchanged"] == seen
+    assert (result["files"]["seen"], result["files"]["read"]) == (seen, retried)
+    assert result["files"]["unchanged"] == seen - retried
     assert {s["state"] for s in result["sources"].values()} == {"complete"}
     assert meta(project)["generation"] == "1"
     assert files_by_path(project) == before
