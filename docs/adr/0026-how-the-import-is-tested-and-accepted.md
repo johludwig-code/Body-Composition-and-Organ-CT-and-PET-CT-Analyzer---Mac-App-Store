@@ -40,7 +40,16 @@ measured.
    placeholder IDs, symbolic links, unreadable and truncated files,
    archives, NIfTI, and the canary values. `corpus_expected.json` lists the
    patients, studies, parts, selection, reason codes and checks of each
-   object, and `test_corpus.py` holds the index to it exactly.
+   object, and `test_corpus.py` holds the index to it exactly. The canary
+   values feed `test_index_privacy.py` and `test_index_privacy_read.py`
+   (ADR 0024, Consequences; the Swift-side moments are still to come): while
+   identifiers are kept, no log, event, result, preview file name, job file
+   or part of `project.sqlite` outside `identifiers` holds a canary; after
+   Remove Identifiers and before the scan it queues, no file in the project
+   folder does, apart from an export the user chose to keep; after that
+   scan, `CANARY_FOLDER` is back only in the rebuilt catalog's relative
+   paths, which are the source's own folder names and open its files, and
+   `project.sqlite` still holds none.
 2. **The owner reviews the expectation.** The generator and the expected
    file come from the same hands, so a rule misread in one is misread in
    the other. `corpus_expected.json` therefore becomes M2's acceptance gate

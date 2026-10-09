@@ -50,12 +50,22 @@ ways, as the judges found:
      (ANONYMOUS, ANONYMIZED, ANONYMISED, ANON, UNKNOWN, NONE, NULL, N/A, NA,
      0, -, adjustable in `identity_config`), count as missing.
    - IssuerOfPatientID is not part of the link; it only feeds
-     `check.issuer_conflict`.
-   - The worker recomputes `link_key_id` from the key in the job and refuses
-     a mismatch with `link_key_mismatch`, which catches a stale job file. The
-     merge uses links only when the catalog's `link_key_id` equals the
-     project's: links made with a key that is no longer the project's are
-     worth nothing.
+     `check.issuer_conflict`. Only whether two issuers differ matters, so the
+     catalog keeps it per file as an HMAC like the ID,
+     `files.issuer_link = "issuer:" + hex(HMAC-SHA256(link_key, b"issuer\x1f"
+     + utf8(issuer)))` after the same stripping and NFC. It is kept per file
+     because the check is computed at every regroup and unchanged files are
+     never read again.
+   - The app puts `link_key` and `link_key_id` into an index payload when the
+     job starts (`JobQueue`'s prepare hook), never when it is queued, so a
+     queued, paused, failed or interrupted job never holds the key, and one
+     that runs after Remove Identifiers runs with `link_key: null`. A payload
+     fixed at enqueue would carry the old key with its own ID, and the two
+     would agree. The worker recomputes `link_key_id` from the key in the job
+     and refuses a mismatch with `link_key_mismatch`, which therefore catches
+     only a key or key ID that was damaged or edited by hand. The merge uses
+     links only when the catalog's `link_key_id` equals the project's: links
+     made with a key that is no longer the project's are worth nothing.
 2. **Patients.** A new study finds its patient through `patient_links`, and
    otherwise through a confirmed folder link. New patients are created one
    per link (or one per study without a link), with keys `pt_%06d` and
@@ -66,9 +76,16 @@ ways, as the judges found:
    |---|---|---|
    | dicom | PatientID present | yes |
    | file | NIfTI `CT_<id>` | yes |
-   | unconfirmed | no ID; folder candidates exist | never |
+   | unconfirmed | PatientID missing or a placeholder, and the catalog offers folder candidates for the study | never |
    | confirmed | the user confirmed a folder ID or typed an ID | yes |
-   | unlinked | identifiers removed or withheld; one patient per study | yes |
+   | unlinked | no link to follow: identifiers removed or withheld, the catalog's links not valid, or PatientID missing or a placeholder with no folder candidate; one patient per study | yes |
+
+   A study without a usable PatientID is held as `unconfirmed` only when the
+   catalog offers a folder ID to confirm (`IndexSQL.merge`, step 3). Without
+   one, because folder IDs are switched off, "Confirm Patient IDs…" would
+   have nothing to propose and the study would wait for an ID typed by hand,
+   so it becomes an `unlinked` patient of its own and is selected
+   automatically.
 
 3. **Folder IDs are confirmed, never assumed.** Only with a link key and
    with folder IDs switched on (`folder_ids`, up to `folder_max_level` 3),
@@ -91,6 +108,11 @@ ways, as the judges found:
    row `ids_confirmed` holds the counts of patients and studies and the
    level. Later anonymous studies in the same folder join through the
    merge.
+
+   *Completed by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: a change of `folder_ids` or `folder_max_level` makes the
+   job regroup, and a change of the placeholder IDs demotes stored IDs at
+   once and reads placeholder rows again at the next scan.*
 4. **Typed IDs and assignment.** The app computes `pid:` links for typed IDs
    with CryptoKit's HMAC, a system framework, against a vector file
    `Protocol/fixtures/link_vectors.json` that both test suites check. A typed
@@ -107,14 +129,24 @@ ways, as the judges found:
    exported again with an ID where there was none), the study keeps its
    patient, `identifiers` keeps the old ID, and a study held under an
    unconfirmed patient stays held. So the merge raises
-   `check.patient_link_changed` (study, warning) when the catalog's links
-   are valid and hold a `pid:` link for a known study that its patient does
-   not hold in `patient_links`, because it leads to another patient or to
-   none. The user resolves it with "Assign to Patient…" or a typed ID; the
-   merge does not release a held study by itself, because which patient a
-   study belongs to is the user's decision once the files and the project
-   disagree. A study the user assigned against its PatientID keeps the
-   warning, which then says exactly that.
+   `check.patient_link_changed` (study, warning) for every current study
+   whose catalog row holds a `pid:` link that the study's patient does not
+   hold in `patient_links`, provided the catalog's links are valid. Its
+   parameter `other_patient` is 1 when the link leads to another patient
+   and 0 when it leads to none. A study new in this merge always holds its
+   link, because it found or made its patient through it (folder
+   candidates, the only other way, exist only for studies without a usable
+   PatientID), so the check fires for known studies only. The merge
+   neither gives the link to the known study's patient nor releases a held
+   study by itself, because which patient a study belongs to is the user's
+   decision once the files and the project disagree. The user resolves it with "Assign to
+   Patient…" or a typed ID. An identity edit cannot read the links in the
+   catalog, and only a merge rebuilds the checks, while an unchanged rescan
+   merges nothing; so `IdentitySQL.assignStudy` clears the warning of every
+   study it moves, which would otherwise outlive the assignment that
+   answered it. The next merge raises it again where the files still
+   disagree: a study the user assigned against its PatientID then has the
+   warning back, and it says exactly that.
 5. **Sex and age.** PatientSex is normalized to F, M or O, otherwise NULL. A
    patient takes the value only if every study that records one agrees;
    otherwise it stays NULL with `check.sex_conflict`. Each study stores its
@@ -136,9 +168,14 @@ ways, as the judges found:
    (dicom, file, folder or typed). In the catalog: `pending_identifiers`,
    the plain PatientID and accession number of each study, which the merge
    copies into `identifiers` and which stay until the catalog is deleted;
-   the `pid:` links; the folder labels; and the relative paths. Folder
-   labels and relative paths hold patient names wherever the folder names
-   do. `project.sqlite` has no column for names or birth dates, holds links
+   the links, all HMACs under `link_key`: `pid:` per file and per study,
+   `issuer:` per file (`files.issuer_link`, decision 1) and the candidates'
+   `folder:` links; the folder labels (`cat_id_candidates.label`); the
+   relative paths (`files.rel_path`, `bad_dirs.rel_dir`); and the free text
+   as the scanner wrote it (study and series descriptions, protocol names).
+   Folder labels and relative paths hold patient names wherever the folder
+   names do, and free text holds whatever a site typed into it.
+   `project.sqlite` has no column for names or birth dates, holds links
    only as HMACs, and holds no path of a source file. Two of its columns
    still hold a source folder's name: `display_path`, and the bookmark,
    which encodes the folder's absolute path; a source folder named after a
@@ -146,13 +183,25 @@ ways, as the judges found:
    #25). `jobs.log_path` holds the path of a job's log inside the project
    folder. The tree shows pseudonyms; a PatientID column, read from
    `identifiers`, is off by default and can be switched on (#25).
+
+   *Corrected by [ADR 0027](0027-corrections-found-while-building-the-scan.md)
+   on 2026-10-09: the catalog also keeps the plain PatientID and accession
+   number per file (`files.patient_id`, `files.accession_number`), from
+   which the regroup derives `pending_identifiers`.*
 7. **What leaves the worker.** Events, results, logs and audit rows hold
    counts and codes only; a progress message never holds a path. The index
    job catches every exception itself, sends `index_failed`, and logs the
    traceback's frames only (file, line, function), never the message or
    locals, so the generic handler's full traceback is never reached.
 8. **Job files.** They hold absolute roots and the link key, so they are
-   written with mode 0600 and deleted when the job ends and at launch.
+   written with mode 0600 and deleted when the job ends and at launch. A
+   job file is written only when its job starts, from the payload prepared
+   then (decision 1); the queue's copy of a job that waits holds no key.
+
+   *Completed by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: the catalog, which holds PatientIDs, accession numbers
+   and folder labels, is 0600 in an `index/` folder of 0700 for the same
+   reason.*
 9. **Remove Identifiers.**
    1. It is refused while a scan, regroup or export runs: "Remove
       Identifiers is available when indexing and exporting have finished."
@@ -175,9 +224,12 @@ ways, as the judges found:
    5. A full scan is queued with `link_key: null`. The worker then requests
       neither PatientID (0010,0020), IssuerOfPatientID (0010,0021),
       OtherPatientIDsSequence nor AccessionNumber (0008,0050), and writes
-      `pid_state = 'withheld'`, no `pid:` link, no pending identifiers and
-      no folder candidates. The merge finds every known series again by
-      fingerprint.
+      `pid_state = 'withheld'`, no `pid:` or `issuer:` link, no pending
+      identifiers and no folder candidates. The merge finds every known
+      series again by fingerprint. An index job that was queued before the
+      removal, or failed or was interrupted and is retried after it, gets
+      its payload when it starts (decision 1), and so runs with
+      `link_key: null` as well.
    6. New studies are refused from then on (`new_study_policy = 'refuse'`,
       OPEN_QUESTIONS #26) and counted in `check.new_studies_not_added`; known
       study UIDs still update.
@@ -206,19 +258,40 @@ ways, as the judges found:
   PatientIDs, and the key table, keep them unless the user deletes them in
   step 9.1, and so do copies made outside the project folder. Each source's
   bookmark keeps the folder's path, which names a patient only if the user
-  chose a folder named after one as a source.
+  chose a folder named after one as a source. The scan of step 9.5 writes
+  the relative paths below each source into the rebuilt catalog again,
+  folder names included, because they are what opens a file.
 - Deleting a file on APFS is not a secure erase: the catalog, the previews
   and the job files are removed, not overwritten. FileVault, which plan §13
   recommends, is what protects whatever remains on the disk.
-- `test_index_privacy.py` builds a canary corpus (PatientName
-  `CANARY^NAME`, PatientID `CANARY-ID-4711`, accession `CANARYACC`, birth
-  date 19010101, folder `CANARY_FOLDER` below the source root, because the
-  root's own path stays in the bookmark by design). Logs, events, results,
-  preview file names and `project.sqlite` outside `identifiers` hold no
-  canary. Before the removal it writes an export with `identifiers =
-  "both"`. After Remove Identifiers with that export chosen for deletion,
-  no file in the project folder holds a canary, `-wal`, `-journal` and
-  `jobs/` included; with it kept, only that export does.
+- The privacy tests use a canary corpus (PatientName `CANARY^NAME`,
+  PatientID `CANARY-ID-4711`, accession `CANARYACC`, birth date 19010101,
+  and a folder `CANARY_FOLDER` below the source root, because the root's
+  own name and path stay in `project.sqlite` by design, in the bookmark and
+  until the removal in `display_path`). On the worker's side,
+  `test_index_privacy_read.py` holds what the scan lets out and
+  `test_index_privacy.py` what the merge, run as the app's own SQL, lets
+  into `project.sqlite` ([ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md));
+  the checks of the files the app writes (previews, job files, exports) and
+  the moment right after Remove Identifiers need the Swift side and are
+  still to come. Together they check three moments, and wherever it checks files it reads the bytes of every file in
+  the project folder, `-wal`, `-journal` and `jobs/` included:
+  - While identifiers are kept: logs, events, results, preview file names,
+    job files and `project.sqlite` outside `identifiers` hold no canary.
+    The catalog holds the PatientID, the accession number and the folder
+    name, as decision 6 says, and no file holds the name or the birth date.
+    The test then writes an export with `identifiers = "both"`.
+  - After Remove Identifiers (step 9.4), before the scan of step 9.5 runs:
+    with that export chosen for deletion, no file holds a canary; with it
+    kept, only that export does.
+  - After that scan: `CANARY_FOLDER` is back in the rebuilt catalog, in
+    the relative paths (`files.rel_path`, and `bad_dirs.rel_dir` for a
+    folder that cannot be listed), because those are the source's own
+    folder names and what opens its files. Checked column by column, the
+    catalog holds it nowhere else (`cat_id_candidates` stays empty, because
+    a scan without a link key records no candidates and so no labels) and
+    holds no other canary. `project.sqlite` holds none, and neither does
+    any other file.
 - `test_schema_sql.py` keeps its rule (the only column containing "name" is
   `label_name`, none contains "birth") and applies it to the catalog's DDL
   too.

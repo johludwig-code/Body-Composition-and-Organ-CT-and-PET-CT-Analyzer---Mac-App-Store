@@ -61,10 +61,22 @@ which is unknown.
    catalog, after its worker has exited and before the queue starts the next
    job of the group; at launch it runs before anything is scheduled. No
    worker writes the catalog while it is merged. A merge that fails is tried
-   again (decision 11).
+   again (decision 11). A scan whose result says `changed: false` wrote no
+   generation, so nothing brings its sources' state into the project but
+   the result itself: its finalize hook applies each source's state,
+   `indexed_at` and summary from the result's `sources` in one short write
+   (ADR 0020, decision 8), and merges only a generation that is still
+   pending (decision 11).
 5. **`flock` is a second guard.** The worker takes `fcntl.flock` on
    `index/catalog.lock`; if the lock is taken, the job ends with the
    recoverable error `catalog_busy`. On SMB this is best effort.
+
+   *Corrected by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: SQLITE_BUSY or SQLITE_LOCKED from any statement of the
+   job is `catalog_busy` as well. The job's connection waits 200 ms per
+   statement, with `cache_spill` off, and retries BEGIN IMMEDIATE and COMMIT
+   for up to 10 s, checking for a cancel between tries, so that a cancel is
+   answered while another connection holds the catalog.*
 6. **Attaching the catalog.** `IndexStore` reads `PRAGMA compile_options`
    once. With `USE_URI` it attaches `file:<path>?mode=ro`; measured in
    Python, a write through it is refused with "attempt to write a readonly

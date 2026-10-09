@@ -89,8 +89,26 @@ to 0024. Judge 2 found no fatal flaw in C.
 8. **Rescans.** A file is read again only when its size, modification time
    or reader version differs, or when the last read found it changing or
    failed with an I/O error. A walk that finds no new, changed or stale row
-   and no change in unreadable folders writes no generation, needs no merge,
-   and its result is `{"changed": false}`.
+   and no change in unreadable folders writes no generation and needs no
+   merge. Its result is `{"changed": false, "sources": {…}}`, and the
+   schema requires the state, file count and unreadable-folder count of
+   every scanned source (`Protocol/schemas/index_result.schema.json`). The
+   merge is what otherwise copies a source's state, `indexed_at` and
+   summary from the catalog's `scans` into `sources`, so without a merge the
+   app applies them from the result: the state mapped as the merge maps it,
+   the time of the result as `indexed_at`, and the entry's counts and code
+   as `summary_json`. Otherwise a source whose share dropped (an empty
+   walk, `source.empty_walk`) would stay `indexing` until the next launch.
+
+   *Corrected by [ADR 0027](0027-corrections-found-while-building-the-scan.md)
+   on 2026-10-09: a file whose last read was refused for want of
+   permission is read again at every scan as well.*
+
+   *Corrected by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: such a file, when it fails again in the same way, writes
+   nothing and sets no `regroup_due`, so the rescan stays unchanged; and a
+   change of the identity settings, like one of the selection settings,
+   makes the job regroup although no file changed.*
 9. **Cancel and crash.** SIGTERM rolls back the batch being written; a short
    transaction then marks the source's scan `interrupted` with its counts,
    and the job ends `cancelled`. Committed batches stay, so the next scan

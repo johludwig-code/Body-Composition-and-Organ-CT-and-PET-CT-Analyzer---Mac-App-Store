@@ -257,6 +257,17 @@ public enum IndexSQL {
         WHERE (selected = 1 OR is_primary = 1)
           AND study_key IN (SELECT st.study_key FROM main.studies AS st JOIN main.patients AS p USING (patient_key)
                              WHERE p.id_status = 'unconfirmed');
+        -- Its automatic choice says why it is not selected (ADR 0023), instead of
+        -- "chosen" beside a series that is not, and keeps the worker's reason for the
+        -- confirmation or assignment that releases it (IdentitySQL). Step 5 wrote the
+        -- worker's reason again, so a patient confirmed since is released here as well.
+        UPDATE main.series SET selection_reason = json_object('v', 1, 'outcome', 'held',
+            'codes', json_array('select.held.unconfirmed_patient'), 'params', json_object(),
+            'if_confirmed', json(selection_reason))
+        WHERE auto_selected = 1 AND index_state = 'current'
+          AND json_extract(selection_reason, '$.outcome') <> 'held'
+          AND study_key IN (SELECT st.study_key FROM main.studies AS st JOIN main.patients AS p USING (patient_key)
+                             WHERE p.id_status = 'unconfirmed');
 
         -- 8. Identifiers, unless they were removed for good.
         INSERT INTO main.identifiers (patient_key, patient_id, accession_numbers, id_source)
@@ -328,6 +339,20 @@ public enum IndexSQL {
         SELECT 'project', 'project', 'check.new_studies_not_added', 'warning',
                json_object('count', count(*))
           FROM temp.m_refused HAVING count(*) > 0;
+        -- A known study keeps its patient when the PatientID in its files changes
+        -- (step 1): which patient it belongs to is the user's decision once the files
+        -- and the project disagree, so the disagreement is said and nothing moves.
+        -- A new study always holds its link, having found or made its patient through
+        -- it in steps 2 and 3 (folder candidates exist only for studies without a
+        -- usable PatientID), so in effect this speaks of known studies only.
+        INSERT INTO main.index_checks (object_kind, object_key, code, level, params_json)
+        SELECT 'study', st.study_key, 'check.patient_link_changed', 'warning',
+               json_object('other_patient', EXISTS (SELECT 1 FROM main.patient_links AS o
+                                                     WHERE o.link = c.pid_link))
+          FROM main.studies AS st JOIN idx.cat_studies AS c USING (study_uid)
+         WHERE (SELECT links_valid FROM temp.m_ctx) AND c.pid_link IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM main.patient_links AS l
+                            WHERE l.link = c.pid_link AND l.patient_key = st.patient_key);
 
         DELETE FROM main.series_pairs;
         INSERT INTO main.series_pairs (pet_series_key, ct_series_key, pet_attenuation_corrected, z_overlap_mm)
@@ -640,8 +665,11 @@ public enum IdentitySQL {
         DELETE FROM main.index_checks
         WHERE object_kind = 'patient' AND object_key NOT IN (SELECT patient_key FROM main.patients);
 
-        -- The confirmed studies were held; SelectionSQL.applyAuto and repairPrimary
-        -- follow on this scope.
+        -- The confirmed studies were held; their automatic choice gets the worker's
+        -- reason back, and SelectionSQL.applyAuto and repairPrimary follow on this scope.
+        UPDATE main.series SET selection_reason = json_extract(selection_reason, '$.if_confirmed')
+        WHERE json_extract(selection_reason, '$.outcome') = 'held'
+          AND study_key IN (SELECT study_key FROM temp.i_rows);
         DELETE FROM temp.sel_scope;
         INSERT INTO temp.sel_scope (study_key) SELECT study_key FROM temp.i_rows;
 
@@ -651,9 +679,10 @@ public enum IdentitySQL {
         DELETE FROM temp.id_confirm;
         """
 
-    /// "Assign to Patient…": moves each study in `id_assign` to its patient.
-    /// Leaves in `sel_scope` the studies that take the automatic choice, and
-    /// writes the audit row `studies_assigned`.
+    /// "Assign to Patient…": moves each study in `id_assign` to its patient and
+    /// clears its `check.patient_link_changed`. Leaves in `sel_scope` the
+    /// studies that take the automatic choice, and writes the audit row
+    /// `studies_assigned`.
     public static let assignStudy = """
         CREATE TEMP TABLE i_assign AS
         SELECT a.study_key, st.patient_key AS old_patient, a.patient_key AS target,
@@ -693,6 +722,14 @@ public enum IdentitySQL {
         UPDATE main.studies SET patient_key = (
             SELECT a.target FROM temp.i_assign AS a WHERE a.study_key = main.studies.study_key)
         WHERE study_key IN (SELECT study_key FROM temp.i_assign);
+        -- The user has just said where the study belongs, and this edit cannot read
+        -- the PatientID in its files: a warning left standing would outlive the
+        -- assignment that answered it, because only a merge rebuilds checks and an
+        -- unchanged rescan merges nothing. The next merge raises it again if the
+        -- files still name another patient.
+        DELETE FROM main.index_checks
+        WHERE object_kind = 'study' AND code = 'check.patient_link_changed'
+          AND object_key IN (SELECT study_key FROM temp.i_assign);
 
         -- The links of a patient left without studies follow its study: the ID they
         -- stand for now names the patient the user chose, so a later study with the
@@ -715,10 +752,20 @@ public enum IdentitySQL {
         DELETE FROM main.index_checks
         WHERE object_kind = 'patient' AND object_key NOT IN (SELECT patient_key FROM main.patients);
 
-        -- A study under an unconfirmed patient is held, as the merge holds it.
+        -- A study under an unconfirmed patient is held, as the merge holds it, and one
+        -- that leaves such a patient is released, its reason the worker's again.
         UPDATE main.series SET is_primary = 0, selected = 0
         WHERE (selected = 1 OR is_primary = 1)
           AND study_key IN (SELECT study_key FROM temp.i_assign WHERE new_status = 'unconfirmed');
+        UPDATE main.series SET selection_reason = json_object('v', 1, 'outcome', 'held',
+            'codes', json_array('select.held.unconfirmed_patient'), 'params', json_object(),
+            'if_confirmed', json(selection_reason))
+        WHERE auto_selected = 1 AND index_state = 'current'
+          AND json_extract(selection_reason, '$.outcome') <> 'held'
+          AND study_key IN (SELECT study_key FROM temp.i_assign WHERE new_status = 'unconfirmed');
+        UPDATE main.series SET selection_reason = json_extract(selection_reason, '$.if_confirmed')
+        WHERE json_extract(selection_reason, '$.outcome') = 'held'
+          AND study_key IN (SELECT study_key FROM temp.i_assign WHERE new_status <> 'unconfirmed');
         -- An automatic study, and one that was held (nothing could be chosen in it by
         -- hand), takes its automatic choice through SelectionSQL.applyAuto and
         -- repairPrimary on this scope. A study chosen by hand keeps the choice.

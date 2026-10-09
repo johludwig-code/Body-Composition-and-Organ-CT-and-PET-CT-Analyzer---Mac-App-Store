@@ -24,7 +24,7 @@
       ]
     },
     "select": {
-      "description": "selection_reason codes. chosen, eligible, excluded and held are the outcome.",
+      "description": "selection_reason codes. chosen, eligible, excluded and held are the outcome. A reason holds one params object for all its codes, so no two excluded codes share a parameter name.",
       "codes": [
         {
           "code": "select.chosen.only_candidate",
@@ -47,6 +47,11 @@
           "text": "Chosen automatically: soft-tissue kernel ({kernel})."
         },
         {
+          "code": "select.chosen.kernel_not_sharp",
+          "params": [],
+          "text": "Chosen automatically: its kernel is not a sharp one, and the alternatives have sharp kernels."
+        },
+        {
           "code": "select.chosen.original",
           "params": [],
           "text": "Chosen automatically: an original image; the alternatives are derived."
@@ -65,6 +70,11 @@
           "code": "select.chosen.tie",
           "params": [],
           "text": "Chosen automatically: equal to another series in every respect; taken by its UID."
+        },
+        {
+          "code": "select.chosen.part",
+          "params": [],
+          "text": "Chosen automatically: equal in every respect to another part of the same split series; taken as the first part."
         },
         {
           "code": "select.eligible.coverage",
@@ -87,6 +97,11 @@
           "text": "Qualifies, but its kernel ({kernel}) is not in the soft-tissue list; the chosen series has a soft-tissue kernel."
         },
         {
+          "code": "select.eligible.kernel_missing",
+          "params": [],
+          "text": "Qualifies, but it does not record its kernel; the chosen series has a soft-tissue kernel."
+        },
+        {
           "code": "select.eligible.derived",
           "params": [],
           "text": "Qualifies, but it is derived; the chosen series is original."
@@ -105,6 +120,11 @@
           "code": "select.eligible.tie",
           "params": [],
           "text": "Qualifies and equals the chosen series, which was taken by its UID."
+        },
+        {
+          "code": "select.eligible.part",
+          "params": [],
+          "text": "Qualifies and equals the chosen series, an earlier part of the same split series."
         },
         {
           "code": "select.excluded.not_image",
@@ -138,8 +158,8 @@
         },
         {
           "code": "select.excluded.not_original",
-          "params": ["value"],
-          "text": "Image Type starts with {value}, not ORIGINAL."
+          "params": ["first_value"],
+          "text": "Image Type starts with {first_value}, not ORIGINAL."
         },
         {
           "code": "select.excluded.not_axial_image_type",
@@ -173,13 +193,13 @@
         },
         {
           "code": "select.excluded.truncated",
-          "params": ["count"],
-          "text": "{count} files end before their pixel data does."
+          "params": ["truncated_files"],
+          "text": "{truncated_files} files end before their pixel data does."
         },
         {
           "code": "select.excluded.missing_pixels",
-          "params": ["count"],
-          "text": "{count} files contain no pixel data."
+          "params": ["missing_files"],
+          "text": "{missing_files} files contain no pixel data."
         },
         {
           "code": "select.excluded.transfer_syntax",
@@ -294,7 +314,7 @@
           "object": "series",
           "level": "info",
           "params": ["reason"],
-          "text": "Split from a series with changing {reason}."
+          "text": "Split from its series: {reason}."
         },
         {
           "code": "check.enhanced_mixed_frames",
@@ -358,6 +378,13 @@
           "level": "warning",
           "params": ["count"],
           "text": "{count} files share an instance UID with a file of another series."
+        },
+        {
+          "code": "check.uid_conflict_lost",
+          "object": "series",
+          "level": "warning",
+          "params": ["count"],
+          "text": "{count} files of this series were left out: a file of another series has the same instance UID."
         },
         {
           "code": "check.dicomdir_incomplete",
@@ -461,6 +488,16 @@
           "text": "The primary series is no longer in the source folders; the automatic selection applies again."
         },
         {
+          "code": "check.patient_link_changed",
+          "object": "study",
+          "level": "warning",
+          "params": ["other_patient"],
+          "text": "The patient ID in this study's files names no patient in this project; the study stays with its patient until you assign it.",
+          "variants": {
+            "other_patient": "The patient ID in this study's files belongs to another patient; the study stays with its patient until you assign it."
+          }
+        },
+        {
           "code": "check.sex_conflict",
           "object": "patient",
           "level": "warning",
@@ -510,6 +547,13 @@
           "text": "{count} folders could not be opened."
         },
         {
+          "code": "check.dicomdir_series_missing",
+          "object": "source",
+          "level": "warning",
+          "params": ["series", "missing"],
+          "text": "A DICOMDIR lists {series} series with {missing} images that were not found at all."
+        },
+        {
           "code": "check.files_changing",
           "object": "source",
           "level": "info",
@@ -554,14 +598,16 @@
       ]
     },
     "split_reason": {
-      "description": "Values of the reason parameter of check.split.",
+      "description": "Values of the reason parameter of check.split: the cascade step that last divided the part (ADR 0022 decision 9), or, for steps b and d, that some files lack the value (ADR 0029).",
       "codes": [
-        {"code": "sop_class", "text": "object type"},
-        {"code": "orientation", "text": "orientation"},
-        {"code": "size", "text": "image size"},
-        {"code": "pixel_spacing", "text": "pixel spacing"},
-        {"code": "acquisition", "text": "acquisition, phase or echo"},
-        {"code": "stack", "text": "stack"}
+        {"code": "sop_class", "text": "the object type differs"},
+        {"code": "orientation", "text": "the orientation differs"},
+        {"code": "missing_orientation", "text": "some files have no valid orientation"},
+        {"code": "size", "text": "the image size differs"},
+        {"code": "pixel_spacing", "text": "the pixel spacing differs"},
+        {"code": "missing_pixel_spacing", "text": "some files have no pixel spacing"},
+        {"code": "acquisition", "text": "the acquisition, phase or echo differs"},
+        {"code": "stack", "text": "the stack differs"}
       ]
     },
     "orientation": {

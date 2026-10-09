@@ -151,10 +151,14 @@ public enum StoreMigrations {
     /// migration alike. The import's SQL (`IndexSQL`) needs SQLite 3.33 for
     /// `UPDATE … FROM` and 3.38 for the built-in JSON functions.
     ///
-    /// Still no column for a name, a birth date or a path beyond
-    /// `display_path`: patients are linked by HMAC (`patient_links`), and
-    /// folder names and relative paths stay in the index catalog, which
-    /// Remove Identifiers deletes.
+    /// Still no column for a name or a birth date, and none for the path of
+    /// a source file: patients are linked by HMAC (`patient_links`), and the
+    /// relative paths and folder names below a source stay in the index
+    /// catalog, which Remove Identifiers deletes. The paths v1 keeps are
+    /// unchanged: a source's bookmark encodes the folder's absolute path and
+    /// `display_path` holds its name (ADR 0020, ADR 0024), and
+    /// `jobs.log_path` holds the path of a job's log inside the project
+    /// folder.
     static let v2 = """
         -- Rows that no shipped version could write, but that would make the unique
         -- index below fail on a hand-made v1 file. Each study keeps the primary the

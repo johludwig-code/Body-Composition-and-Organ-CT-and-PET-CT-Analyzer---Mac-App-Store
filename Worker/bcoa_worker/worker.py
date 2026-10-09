@@ -51,6 +51,7 @@ _JOB_MODULES = {
     "selftest": "bcoa_worker.jobs.selftest",
     "spike_s2": "bcoa_worker.jobs.spike_s2",
     "segment": "bcoa_worker.jobs.segment",
+    "index": "bcoa_worker.index.run",
 }
 
 

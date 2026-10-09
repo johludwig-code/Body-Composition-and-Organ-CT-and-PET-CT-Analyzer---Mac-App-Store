@@ -208,6 +208,11 @@ vanished from a study chosen by hand.
    passed as strings, so every placeholder in the catalog is `%@`. The codes
    are registered in `Protocol/index_codes.json`; a test holds every code
    the worker emits to the registry, and the enums to it as well.
+
+   *Completed by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: the merge writes the `held` reason, with the worker's
+   own under `if_confirmed`, and the confirmation or assignment that
+   releases the study puts that one back.*
 10. **Selection state.** Each study has a `selection_mode` (`auto` or
     `user`), and each series a `selection_origin` (`auto`, `user`,
     `bulk_thin_ct` or `cohort`, with `selection_cohort_id`). The merge:
@@ -228,6 +233,18 @@ vanished from a study chosen by hand.
     refuse a primary that is not selected. Every statement clears the
     primary first, then sets `selected`, then sets the primary, because the
     unique index is checked row by row.
+
+    Before it creates them, v2 repairs what a hand-made v1 file could hold,
+    although no shipped version wrote it: an index that cannot be created
+    would keep the project from opening at all. Per study it keeps the
+    primary the export can see, a selected one or one with results, and
+    among those the lowest `series_key`, which is the one the export already
+    takes (exactly so in a project with one run, since the export counts
+    results of the run it writes); only when no primary is visible does it
+    keep the lowest
+    `series_key` of all. It clears the other primaries and selects the one
+    kept. Keeping the lowest key alone would hand the primary to a series
+    the user never selected and select it.
 12. **Edits.** `SelectionSQL` holds `makePrimary`, `select`, `deselect`,
     `bulkThinCT`, `applyAuto`, `repairPrimary`, `saveCohort` and
     `applyCohort`, with `inputs` for their temp tables, as Swift constants

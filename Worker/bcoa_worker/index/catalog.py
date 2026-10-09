@@ -18,20 +18,28 @@ fingerprint.
 
 No column holds a name or a birth date, but much here can still identify a
 patient, which is why Remove Identifiers deletes the whole file: PatientIDs
-and accession numbers in plain text in `pending_identifiers`; folder names,
+and accession numbers in plain text in `pending_identifiers` and, per file,
+in `files.patient_id` and `files.accession_number`; folder names,
 which often carry patient names, in plain text in `cat_id_candidates.label`
 and as raw bytes in `files.rel_path` and `bad_dirs.rel_dir`; free text as the
 scanner wrote it (study and series descriptions, protocol names); and HMAC
 links (`pid_link`, `issuer_link`, the candidates' links). The scan that
 rebuilds the catalog without a link key writes no identifier, link or
 candidate label, but it records relative paths again, because they are what
-opens a file.
+opens a file. For the same reason the catalog is the owner's only: the file
+is 0600 and `index/` 0700, as the job files are, because a project folder can
+sit on a share that other users read (ADR 0029). The rollback journal takes
+the catalog's mode.
 """
 
 from __future__ import annotations
 
+import errno
+import os
 import sqlite3
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 CATALOG_FORMAT = 1
@@ -68,6 +76,13 @@ CREATE TABLE files (
     issuer_link TEXT,
     pid_state TEXT CHECK (pid_state IN ('present', 'file', 'missing', 'placeholder', 'withheld')
         OR pid_state IS NULL),
+    -- The PatientID as linked (stripped, NFC; for a NIfTI file the <id> of its
+    -- name) and the AccessionNumber, from which the regroup writes each
+    -- study's pending_identifiers. Per file, because a study's ID is that of
+    -- its most frequent link, which only the counts over all its files decide,
+    -- and because a file read again with a corrected ID must replace what the
+    -- old read left. NULL, and the tags not requested, without a link key.
+    patient_id TEXT, accession_number TEXT,
     sex TEXT, age_years REAL, age_source TEXT, age_conflict INTEGER,
     study_date TEXT, study_time TEXT, study_description TEXT, modality TEXT, series_number INTEGER,
     series_date TEXT, series_description TEXT, protocol TEXT, body_part TEXT,
@@ -116,7 +131,12 @@ CREATE TABLE cat_instances (
 -- What the merge reads. catalog_meta keys: format, catalog_id (uuid4 hex),
 -- generation, complete ('1' once the derived tables of that generation are
 -- written), next_part_ref (never reused), reader_version, worker_version,
--- link_key_id, selection_config_sha256.
+-- link_key_id, selection_config_sha256, identity_config_sha256. Three more
+-- belong to the scan: regroup_due ('1' from the first write to files or
+-- bad_dirs after a regroup until the next regroup clears it, so a scan
+-- cancelled after its last batch still regroups next time), files_link_key_id
+-- (the key under which the rows of files were read; '' without a key) and
+-- files_placeholders_sha256 (the placeholder IDs they were read with).
 CREATE TABLE catalog_meta (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE scans (
     source_id INTEGER PRIMARY KEY,
@@ -186,6 +206,36 @@ _DAMAGED = frozenset({sqlite3.SQLITE_NOTADB, sqlite3.SQLITE_CORRUPT})
 _COMPANIONS = ("-journal", "-wal", "-shm")
 
 
+# How long the job waits in all for another program's lock on the catalog
+# (ADR 0021: 10 s on a local volume), and how long one wait inside SQLite
+# lasts. No signal handler runs while SQLite waits, so the step is what a
+# cancel can be late by: with the whole 10 s in one step it was 8.3 s against
+# the 2 s of ADR 0026.
+BUSY_SECONDS = 10.0
+BUSY_STEP_MS = 200
+
+
+def private_folder(folder: Path) -> None:
+    """Create `folder` for the owner only, and make an existing one so."""
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _chmod(folder, 0o700)
+
+
+def _private_file(path: Path) -> None:
+    os.close(os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600))
+    _chmod(path, 0o600)
+
+
+def _chmod(path: Path, mode: int) -> None:
+    try:
+        os.chmod(path, mode)
+    except OSError as error:
+        # Volumes that keep no modes (FAT, some shares) refuse; the file is
+        # then as private as that volume can make it, as for the job files.
+        if error.errno not in (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP):
+            raise
+
+
 def open_catalog(path: Path, *, timeout: float = 10.0) -> sqlite3.Connection:
     """Open the catalog for writing: create it when it is missing, build it
     again when it is of another format or damaged.
@@ -194,7 +244,8 @@ def open_catalog(path: Path, *, timeout: float = 10.0) -> sqlite3.Connection:
     transaction is begun explicitly, because a batch of the read, and the
     whole regroup, is exactly one transaction that must roll back as one.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
+    private_folder(path.parent)
+    _private_file(path)
     connection = _connect(path, timeout)
     try:
         state = _state(connection)
@@ -209,6 +260,7 @@ def open_catalog(path: Path, *, timeout: float = 10.0) -> sqlite3.Connection:
         connection.close()
         for suffix in ("", *_COMPANIONS):
             Path(f"{path}{suffix}").unlink(missing_ok=True)
+        _private_file(path)
         connection = _connect(path, timeout)
     try:
         _configure(connection)
@@ -221,6 +273,46 @@ def open_catalog(path: Path, *, timeout: float = 10.0) -> sqlite3.Connection:
 
 def _connect(path: Path, timeout: float) -> sqlite3.Connection:
     return sqlite3.connect(path, timeout=timeout, isolation_level=None)
+
+
+def is_busy(error: BaseException) -> bool:
+    """Whether an SQLite error means that another connection holds a lock."""
+    code = getattr(error, "sqlite_errorcode", None) or 0
+    return isinstance(error, sqlite3.OperationalError) and (code & 0xFF) in (
+        sqlite3.SQLITE_BUSY,
+        sqlite3.SQLITE_LOCKED,
+    )
+
+
+def wait_briefly(connection: sqlite3.Connection) -> None:
+    """Make every statement of the job's connection wait BUSY_STEP_MS for a
+    lock, and let only BEGIN IMMEDIATE and COMMIT need one.
+
+    A reader of the app (a label, Show Files, a previews job) holds a shared
+    lock that blocks a COMMIT. With cache spill on, a statement in the middle
+    of a large transaction can need the exclusive lock as well, and SQLite
+    then fails the statement for good; with it off, the dirty pages stay in
+    memory until COMMIT, which `execute_waiting` can retry.
+    """
+    connection.execute(f"PRAGMA busy_timeout = {BUSY_STEP_MS}")
+    connection.execute("PRAGMA cache_spill = OFF")
+
+
+def execute_waiting(
+    connection: sqlite3.Connection, statement: str, check: Callable[[], None]
+) -> None:
+    """Run BEGIN IMMEDIATE or COMMIT, which may be retried after SQLITE_BUSY,
+    for up to BUSY_SECONDS, calling `check` between tries so that a cancel
+    ends the wait. The last SQLITE_BUSY is raised."""
+    deadline = time.monotonic() + BUSY_SECONDS
+    while True:
+        try:
+            connection.execute(statement)
+            return
+        except sqlite3.OperationalError as error:
+            if not is_busy(error) or time.monotonic() >= deadline:
+                raise
+        check()
 
 
 def _configure(connection: sqlite3.Connection) -> None:

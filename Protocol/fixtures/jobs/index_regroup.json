@@ -33,7 +33,7 @@
     "selection": {
       "version": 1,
       "min_slices": 50,
-      "coverage_tolerance_mm": 10.0,
+      "coverage_tolerance_mm": 1.0,
       "thickness_tie_mm": 0.02,
       "thickness_floor_mm": 1.0,
       "kernel_before_thickness": true,
@@ -45,7 +45,7 @@
       ],
       "excluded_description_terms": [
         "topogram", "scout", "localizer", "surview", "scanogram", "dose report",
-        "patient protocol", "screen save", "mip", "minip", "mpr", "vrt", "cor", "sag", "3d"
+        "patient protocol", "screen save", "mip", "minip", "mpr", "vrt", "3d"
       ],
       "kernels": {
         "siemens": {

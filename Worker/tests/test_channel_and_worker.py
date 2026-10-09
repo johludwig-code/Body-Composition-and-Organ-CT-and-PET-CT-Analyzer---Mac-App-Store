@@ -161,8 +161,10 @@ from bcoa_worker import worker
 handlers = worker._handlers()
 assert set(handlers) == set(worker._JOB_MODULES), handlers
 assert not [m for m in sys.modules if m.startswith("bcoa_worker.jobs")], "imported eagerly"
-for module in worker._JOB_MODULES.values():
-    importlib.import_module(module)
+assert not [m for m in sys.modules if m.startswith("bcoa_worker.index")], "imported eagerly"
+for kind, module in worker._JOB_MODULES.items():
+    if kind != "index":
+        importlib.import_module(module)
 assert "bcoa_worker.index" not in sys.modules
 import requests
 print(requests.LOADED)

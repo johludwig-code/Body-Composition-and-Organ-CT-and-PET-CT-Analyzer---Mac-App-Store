@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from bcoa_worker.index.catalog import CATALOG_DDL
+from bcoa_worker.index.codes import CHECK_LEVELS
 from conftest import PROTOCOL_ROOT
 from swift_sql import INDEX_SQL, constants, migration
 
@@ -118,6 +119,7 @@ def test_every_check_the_sql_writes_is_registered_as_written() -> None:
         "check.new_series_since_manual",
         "check.primary_gone",
         "check.new_studies_not_added",
+        "check.patient_link_changed",
         "check.age_inconsistent",
     }
     for kind, code, level, params in writes:
@@ -159,8 +161,42 @@ def test_bad_dir_codes_are_those_of_the_catalog() -> None:
 
 
 def test_held_is_the_reason_of_an_unconfirmed_patients_series() -> None:
-    # The merge holds these series without writing a reason; the app shows
-    # this code for them, so it must exist exactly once.
+    # The merge writes this code as the reason of such a series and keeps
+    # the worker's own beside it (ADR 0029), so it must exist exactly once.
     assert [c for c in _codes("select") if c.startswith("select.held.")] == [
         "select.held.unconfirmed_patient"
     ]
+
+
+# The checks the app's SQL writes after a merge; the worker never computes them.
+_MERGE_CHECKS = {
+    "check.sex_conflict",
+    "check.new_series_since_manual",
+    "check.primary_gone",
+    "check.new_studies_not_added",
+    "check.patient_link_changed",
+    "check.age_inconsistent",
+}
+
+
+def test_the_workers_check_levels_are_the_registrys() -> None:
+    registered = {c["code"]: c for c in GROUPS["check"]}
+    assert set(CHECK_LEVELS) == set(registered) - _MERGE_CHECKS
+    for code, level in CHECK_LEVELS.items():
+        assert level == registered[code]["level"], code
+        # cat_checks takes these objects only; patients and the project are
+        # the merge's.
+        assert registered[code]["object"] in {"source", "study", "series"}, code
+
+
+def test_no_two_excluded_codes_share_a_parameter() -> None:
+    # A reason holds one params object for all its codes, and an excluded
+    # part usually fails several conditions: a shared name would make one
+    # code's number the other's.
+    seen: dict[str, str] = {}
+    for entry in GROUPS["select"]:
+        if not entry["code"].startswith("select.excluded."):
+            continue
+        for name in entry["params"]:
+            assert name not in seen, (name, seen.get(name), entry["code"])
+            seen[name] = entry["code"]

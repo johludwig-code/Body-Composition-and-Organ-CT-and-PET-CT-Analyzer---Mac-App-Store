@@ -312,6 +312,15 @@ class Project:
             "SELECT count(*) FROM series JOIN studies USING (study_key) "
             "JOIN patients USING (patient_key) WHERE id_status = 'unconfirmed' AND selected = 1"
         ) == [(0,)]
+        # The automatic choice of an unconfirmed patient's study is held, and
+        # says so, and no other is (ADR 0023).
+        assert self.q(
+            "SELECT count(*) FROM series AS s JOIN studies AS st USING (study_key) "
+            "JOIN patients AS p USING (patient_key) "
+            "WHERE s.index_state = 'current' AND s.auto_selected = 1 "
+            "AND (p.id_status = 'unconfirmed') "
+            "<> (coalesce(json_extract(s.selection_reason, '$.outcome'), '') = 'held')"
+        ) == [(0,)]
         assert self.q("PRAGMA foreign_key_check") == []
 
     def primary(self, study_key: str) -> list[tuple[Any, ...]]:
@@ -499,6 +508,13 @@ def test_s1_first_merge(tmp_path: Path) -> None:
     assert json.loads(
         p.q("SELECT selection_reason FROM series WHERE series_key = 's_000002'")[0][0]
     )["codes"] == ["select.chosen.thinnest"]
+    # Held, and the reason says so rather than "chosen" (ADR 0023); the
+    # worker's reason waits for the confirmation.
+    held = json.loads(
+        p.q("SELECT selection_reason FROM series WHERE series_key = 's_000004'")[0][0]
+    )
+    assert (held["outcome"], held["codes"]) == ("held", ["select.held.unconfirmed_patient"])
+    assert held["if_confirmed"]["outcome"] == "chosen"
     assert p.q("SELECT patient_key, patient_id, accession_numbers, id_source FROM identifiers") == [
         ("pt_000001", "00012345", '["ACC1"]', "dicom")
     ]
@@ -1271,11 +1287,36 @@ def test_assign_keeps_a_choice_by_hand(tmp_path: Path) -> None:
     assert p.q("SELECT selected FROM series WHERE series_key = 's_000004'") == [(0,)]
 
 
+def _reason(p: Project, series_key: str) -> dict[str, Any]:
+    return dict(
+        json.loads(
+            p.q("SELECT selection_reason FROM series WHERE series_key = ?", series_key)[0][0]
+        )
+    )
+
+
 def test_assign_to_an_unconfirmed_patient_holds_the_study(tmp_path: Path) -> None:
     p = anonymous_folders(tmp_path)
+    before = _reason(p, "s_000004")
     p.identity("assignStudy", assign=[("st_000004", "pt_000003")])
     p.invariants()
     assert p.q("SELECT selected, is_primary FROM series WHERE series_key = 's_000004'") == [(0, 0)]
+    held = _reason(p, "s_000004")
+    assert (held["outcome"], held["if_confirmed"]) == ("held", before)
+    # Assigned to a patient with a PatientID, it is released with the reason
+    # it had (its own patient went when it was emptied).
+    p.identity("assignStudy", assign=[("st_000004", "pt_000001")])
+    p.invariants()
+    assert _reason(p, "s_000004") == before
+
+
+def test_a_confirmation_releases_the_held_reason(tmp_path: Path) -> None:
+    p = anonymous_folders(tmp_path)
+    held = _reason(p, "s_000003")
+    assert held["outcome"] == "held"
+    p.identity("confirmFolderLevel", confirm=LEVEL_1, level=1)
+    p.invariants()
+    assert _reason(p, "s_000003") == held["if_confirmed"]
 
 
 def test_a_typed_id_matching_nothing_creates_a_confirmed_patient(tmp_path: Path) -> None:
@@ -1326,6 +1367,90 @@ def test_one_typed_id_for_two_studies_makes_one_patient(tmp_path: Path) -> None:
     assert _patients(p)[-1] == ("pt_000006", "P0006", "confirmed", "F", "st_000002,st_000005")
     assert p.q("SELECT count(*) FROM identifiers WHERE patient_key = 'pt_000006'") == [(0,)]
     assert b"B-17" not in p.path.read_bytes()
+
+
+# ---------------------------------------------------------------- a PatientID that changes
+
+_LINK_CHANGED = (
+    "SELECT object_key, params_json FROM index_checks "
+    "WHERE object_kind = 'study' AND code = 'check.patient_link_changed' ORDER BY 1"
+)
+
+
+def test_a_known_study_whose_patient_id_changes_keeps_its_patient_and_says_so(
+    tmp_path: Path,
+) -> None:
+    # ADR 0024 decision 4: a correction or a merge of patients in the PACS,
+    # or files exported again with an ID where there was none. The study
+    # stays where it is, a held study stays held, and the warning tells the
+    # user, who decides with "Assign to Patient…".
+    p = anonymous_folders(tmp_path)
+    later_6 = DICOM_6 | {"study_uid": "6.2", "study_date": "2022-01-01", "age_years": 73.0}
+    studies = [
+        ANON_17A,
+        ANON_18 | {"pid_link": PID_A, "pid_state": "present"},
+        ANON_17B,
+        DICOM_6 | {"pid_link": PID_7},
+        DICOM_7 | {"pid_link": PID_7_NEW},
+        later_6,
+    ]
+    parts = [*IDENTITY_SERIES, chosen(6, "6.2.1", "6.2")]
+    pending = [
+        ("6.1", "00077", "ACC66", "dicom", 2),
+        ("7.1", "00078", "ACC77", "dicom", 2),
+        ("6.2", "00066", "ACC62", "dicom", 2),
+    ]
+    # Only studies without a usable PatientID get folder candidates.
+    candidates = [
+        *_folders("5.1", "CASE_017", FOLDER_017),
+        *_folders("5.2", "CASE_017", FOLDER_017),
+    ]
+    p.write_catalog(2, studies, parts, pending=pending, candidates=candidates)
+    p.merge()
+    p.invariants()
+    assert p.q(
+        "SELECT study_uid, patient_key FROM studies WHERE study_uid IN ('6.1', '7.1', '5.3', '6.2') "
+        "ORDER BY study_key"
+    ) == [("6.1", "pt_000001"), ("5.3", "pt_000003"), ("7.1", "pt_000004"), ("6.2", "pt_000001")]
+    assert p.q(_LINK_CHANGED) == [
+        ("st_000001", '{"other_patient":1}'),
+        ("st_000003", '{"other_patient":0}'),
+        ("st_000004", '{"other_patient":0}'),
+    ]
+    # The held study stays held, and a link the files name for a known study
+    # is not given to anyone: only the user can say whose it is.
+    assert p.q("SELECT selected FROM series WHERE series_key = 's_000003'") == [(0,)]
+    assert p.q("SELECT link, patient_key FROM patient_links ORDER BY patient_key, link") == [
+        (PID_6, "pt_000001"),
+        (PID_7, "pt_000004"),
+    ]
+    # identifiers keeps the ID it had; a new study with that ID joins its patient.
+    assert p.q("SELECT patient_key, patient_id, accession_numbers FROM identifiers ORDER BY 1") == [
+        ("pt_000001", "00066", '["ACC62","ACC66"]'),
+        ("pt_000004", "00077", '["ACC77"]'),
+    ]
+
+    # The user moves 6.1 to the patient its ID now names, and keeps 7.1 with
+    # P0001 against its ID. The edit cannot read the files, so both warnings
+    # go; the next merge raises again the one the files still contradict.
+    p.identity("assignStudy", assign=[("st_000001", "pt_000004"), ("st_000004", "pt_000001")])
+    p.invariants()
+    assert p.q(_LINK_CHANGED) == [("st_000003", '{"other_patient":0}')]
+    p.write_catalog(3, studies, parts, pending=pending, candidates=candidates)
+    p.merge()
+    p.invariants()
+    assert p.q(_LINK_CHANGED) == [
+        ("st_000003", '{"other_patient":0}'),
+        ("st_000004", '{"other_patient":0}'),
+    ]
+
+    # Links made with another key say nothing about any patient.
+    p.write_catalog(
+        4, studies, parts, pending=pending, candidates=candidates, link_key_id="0123456789abcdef"
+    )
+    p.merge()
+    p.invariants()
+    assert p.q(_LINK_CHANGED) == []
 
 
 # ---------------------------------------------------------------- the catalog stays read-only

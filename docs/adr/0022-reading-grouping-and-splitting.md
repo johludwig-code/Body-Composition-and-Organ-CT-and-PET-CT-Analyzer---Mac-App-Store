@@ -72,6 +72,12 @@ its selection, QC and results, to different images.
      `source.empty_walk`), because a dropped network share often looks like
      an empty folder. To drop a source's series, the user removes the
      source.
+
+   *Corrected by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: a root that goes while its files are read makes the
+   source `unreachable` and deletes nothing, the project folder is never
+   walked, and an entry the walk cannot describe keeps the rows at and
+   below it and otherwise gets an `unreadable` row.*
 2. **Recognition by content.**
 
    | content | kind |
@@ -106,6 +112,16 @@ its selection, QC and results, to different images.
    when the file's last 8 bytes are not the Sequence Delimitation Item
    (FFFE,E0DD); an image SOP class without a pixel element is `missing`;
    anything else is `ok`.
+
+   *Corrected by [ADR 0027](0027-corrections-found-while-building-the-scan.md)
+   on 2026-10-09: a pixel element of length 0 is `missing`, and a
+   Deflated file's pixel element is found by a second read, because the
+   position after `stop_before_pixels` is the end of the file there.*
+
+   *Corrected by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: an encapsulated element is followed item by item to its
+   delimiter, because trailing padding may legally follow it, and a frame
+   count the element cannot hold makes the file `read.invalid_dicom`.*
 5. **Changing and unreadable files.** A file is stat'ed before it is opened
    and after it is read. If its size or modification time changed, its kind
    is `changing`, it is read again at the next scan, and the source gets
@@ -127,6 +143,11 @@ its selection, QC and results, to different images.
    discovery: the walk already finds every file, and a DICOMDIR can be
    stale. Matching by SOP UID makes the case and Unicode normalization of
    ReferencedFileID irrelevant.
+
+   *Corrected by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: the DICOMDIR is read without pydicom, so that no PATIENT
+   record is parsed, and a series it lists that no part holds gives the
+   source `check.dicomdir_series_missing`.*
 8. **Instances and duplicates.** Each `image` or `non_image` file is one
    instance, and so is each frame of a multi-frame file. The instance key
    (`sop_key`) is the SOP Instance UID, followed by `#<frame>` for a frame of
@@ -136,6 +157,10 @@ its selection, QC and results, to different images.
    relative path. The losers are counted in `check.duplicates`. The same SOP
    UID under another study or series UID gives `check.uid_conflict`, and the
    winner's grouping is used.
+
+   *Corrected by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: the part of the loser's own series gets
+   `check.uid_conflict_lost`.*
 9. **Grouping and the split cascade.** Parts are formed per series UID
    within the study UID and split in this order, each step within the groups
    of the step before:
@@ -156,6 +181,17 @@ its selection, QC and results, to different images.
    gets a warning. Parts are numbered 0…n−1 by their lowest position along
    the slice normal, then by InstanceNumber, and each part of a split series
    gets `check.split` with its reason.
+
+   *Corrected by [ADR 0028](0028-corrections-found-while-building-the-regroup.md)
+   on 2026-10-09: step e splits only when the tag has as many values as
+   instances share the most crowded position, parts are numbered per
+   series UID across studies, and a part with a file of mixed frames has
+   no geometry.*
+
+   *Completed by [ADR 0029](0029-corrections-found-in-the-review-of-the-index-job.md)
+   on 2026-10-09: steps b and d set files without a valid orientation or
+   without PixelSpacing apart, with the split reasons
+   `missing_orientation` and `missing_pixel_spacing`.*
 10. **Part identity across regroups.** Each new part is compared by instance
     key with the parts of the previous generation. Matching is greedy, by
     descending overlap: a new part takes an old `part_ref` when the overlap

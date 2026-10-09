@@ -17,9 +17,16 @@ ignore = ["S101", "S603", "S607", "RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Budgets of 100 000 files run in their own job (ADR 0026 decision 4); every
+# push runs the rest. `pytest -m slow` runs them.
+markers = ["slow: takes minutes; excluded unless asked for with -m slow"]
+addopts = "-m 'not slow'"
 
 [tool.ruff.lint.isort]
-known-first-party = ["bcoa_worker", "conftest", "export_project", "swift_sql"]
+known-first-party = [
+    "bcoa_worker", "conftest", "corpus_check", "dicom_factory", "export_project", "index_jobs",
+    "swift_sql",
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests use broad pytest.raises on purpose where the message is not the point.

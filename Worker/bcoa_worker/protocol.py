@@ -200,6 +200,30 @@ class Job:
             raise ProtocolError(f"path leaves the project folder: {relative!r}")
         return candidate
 
+    def source_root(self, source_id: int) -> Path:
+        """The absolute root of a source that an index payload lists as active.
+
+        Source folders are the only paths outside the project the worker
+        reads, and this is where it gets them: a source the payload does not
+        list, or lists without a root, is refused (ADR 0020 decision 10). The
+        root is taken as written, not resolved, because resolving a path on a
+        dropped network share can hang, and the grant the app made is for
+        this path. The message names the source by number only: its root
+        holds a folder name, and folder names often carry patient names.
+        """
+        for entry in self.payload.get("sources") or []:
+            if not isinstance(entry, dict) or type(entry.get("source_id")) is not int:
+                continue
+            if entry["source_id"] != source_id:
+                continue
+            root = entry.get("root")
+            if entry.get("status") != "active" or not isinstance(root, str):
+                raise ProtocolError(f"source {source_id} has no root to read")
+            if not root.startswith("/"):
+                raise ProtocolError(f"source {source_id} has a relative root")
+            return Path(root)
+        raise ProtocolError(f"source {source_id} is not listed in the job")
+
 
 def parse_job(raw: dict[str, Any]) -> Job:
     if raw.get("protocol_version") != PROTOCOL_VERSION:

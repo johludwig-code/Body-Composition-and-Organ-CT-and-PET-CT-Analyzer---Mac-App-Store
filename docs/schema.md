@@ -44,7 +44,13 @@ catalog's tables to the same rule.
 
 - `sources`: `state` (`new`, `indexing`, `indexed`, `interrupted`,
   `unreachable`, `removed`), `volume_kind` (`local`, `network`, `removable`),
-  `indexed_at`, `summary_json` (counts and codes only).
+  `indexed_at`, `summary_json` (counts and codes only). The merge sets
+  `state`, `indexed_at` and `summary_json` from the catalog's `scans`. A
+  scan that changed nothing writes no generation and is not merged; its
+  result (`"changed": false`) must then carry every scanned source's state
+  and counts (`Protocol/schemas/index_result.schema.json`), and the app
+  applies the state, the result's time as `indexed_at` and the counts and
+  code as `summary_json` from it (ADR 0020, ADR 0021; *not built yet*).
 - `patients`: `id_status` (`dicom`, `file`, `unconfirmed`, `confirmed`,
   `unlinked`; see "Identity").
 - `identifiers`: `id_source` (`dicom`, `file`, `folder`, `typed`).
@@ -77,6 +83,12 @@ catalog's tables to the same rule.
   `series_primary_is_selected_on_insert` and `…_on_update` refuse anything
   else. Statements therefore clear the primary, then set `selected`, then set
   the primary. The export takes the primary of each study.
+- Before v2 creates that index it repairs a file that would violate it,
+  which only a hand-made v1 file could: per study it keeps the primary the
+  export can see (one that is selected or has results), the lowest
+  `series_key` among those, or the lowest `series_key` of all when none is
+  visible; it clears the other primaries and selects the one it keeps
+  (ADR 0023).
 - The studies of a patient with `id_status = 'unconfirmed'` are never
   selected.
 
@@ -113,9 +125,18 @@ date order, new series by study key, series number, UID and part.
   source_id ␟ folder components 1…k))`; it reaches `patient_links` only when
   the user confirms it.
 - `id_status`: `dicom` (PatientID present), `file` (NIfTI `CT_<id>`),
-  `unconfirmed` (no ID; folder candidates exist; never selected), `confirmed`
-  (a folder ID confirmed or an ID typed), `unlinked` (identifiers removed or
-  withheld; one patient per study).
+  `unconfirmed` (PatientID missing or a placeholder, and the catalog offers
+  folder candidates; never selected), `confirmed` (a folder ID confirmed or
+  an ID typed), `unlinked` (no link to follow: identifiers removed or
+  withheld, the catalog's links not valid, or PatientID missing or a
+  placeholder with no folder candidate, as when folder IDs are switched
+  off; one patient per study, selected automatically).
+- A known study keeps its patient when the PatientID in its files changes.
+  The merge then writes `check.patient_link_changed` for it, with
+  `other_patient` 1 when the files' `pid:` link leads to another patient
+  and 0 when it leads to none, and moves nothing; "Assign to Patient…"
+  clears the warning of the studies it moves, and the next merge raises it
+  again where the files still disagree (ADR 0024).
 - "Remove Identifiers" deletes `identifiers`, `patient_links`, `link_key` and
   `link_key_id` in one transaction with `secure_delete`, turns `unconfirmed`
   patients into `unlinked`, sets `identifiers_removed_at`, renames each
@@ -134,7 +155,11 @@ date order, new series by study key, series number, UID and part.
   for example `{"count": 3, "minimum": 50}`.
 - `series.selection_reason` is
   `{"v": 1, "outcome": "chosen|eligible|excluded|held", "codes": […],
-  "params": {…}}`.
+  "params": {…}}`. The worker writes the first three outcomes; `held` is
+  the merge's, for the automatic choice of a patient whose ID is
+  unconfirmed (`select.held.unconfirmed_patient`), and keeps the worker's
+  reason under `if_confirmed`, which `confirmFolderLevel` and `assignStudy`
+  put back when they release the study (ADR 0029).
 - Every code, with its parameters and its US-English default text, is
   registered in `Protocol/index_codes.json`. The database holds codes and
   numbers, never prose; the app renders the text through the String Catalog.
@@ -157,20 +182,76 @@ it is never migrated, and a catalog of another format, or a damaged one, is
 deleted and rebuilt.
 
 - Per file: `files` (source, relative path as raw bytes, size, modification
-  time, reader version, kind, header values), `frames`, `dicomdir_entries`,
-  and `bad_dirs` for folders the walk could not list.
-- Per scan: `scans` (state of each source) and `catalog_meta` (format,
-  `catalog_id`, `generation`, `complete`, reader and worker version,
-  `link_key_id`, the hash of the selection settings).
+  time, reader version, kind, header values, `pid_link`, and `issuer_link`,
+  the IssuerOfPatientID as an HMAC under the link key, kept per file because
+  `check.issuer_conflict` is computed at every regroup and unchanged files
+  are never read again; and `patient_id` and `accession_number` in plain
+  text, from which the regroup writes `pending_identifiers`: a study's ID is
+  that of its most frequent link, which only the counts over all its files
+  decide, and a file read again with a corrected ID must replace what its
+  old read left), `frames`, `dicomdir_entries`, and `bad_dirs` for folders
+  the walk could not list. The identity columns are NULL, and the tags not
+  even requested, when the scan runs without a link key. An entry the walk
+  could not describe (its stat failed with anything but "not found") gets
+  an `unreadable` row with size and time 0 and `read.permission_denied` or
+  `read.io_error`, unless rows at or below it are kept, and the project
+  folder is never walked when it lies below a source root (ADR 0029).
+- Per scan: `scans` (state of each source, and as `summary_json` the counts
+  and code that the result's entry for the source carries) and
+  `catalog_meta` (format, `catalog_id`, `generation`, `complete`, reader and
+  worker version, `link_key_id`, the hashes of the selection settings and
+  of the identity settings (`selection_config_sha256`,
+  `identity_config_sha256`: when either differs from the job's, the job
+  regroups although no file changed); and for the scan itself
+  `regroup_due`, '1' from the first write to `files` or `bad_dirs` that
+  changes a row after a regroup until the next one, so that a scan
+  cancelled after its last batch still regroups; `files_link_key_id`, the
+  key the rows of `files` were read under: rows read under another key, or
+  none, lose their identity columns and are read again, and
+  `pending_identifiers`, `cat_id_candidates` and `cat_studies.pid_link` are
+  emptied in the same transaction, with `complete` set to '0' until the
+  next regroup; and `files_placeholders_sha256`, the placeholder IDs the
+  rows were read with: when they change, rows whose PatientID is now a
+  placeholder are demoted at once and placeholder rows are read again at
+  the next scan of their source (ADR 0029)).
 - Derived once per generation: `cat_studies`, `cat_series`, `cat_checks`,
-  `cat_pairs`, `cat_id_candidates` and `cat_instances`.
+  `cat_pairs`, `cat_id_candidates` and `cat_instances`. The regroup
+  (`index/group.py`) deletes and writes all of them, and
+  `pending_identifiers`, in one `BEGIN IMMEDIATE` transaction that also
+  raises `generation` by one and sets `complete` to '1', so the merge only
+  ever sees a whole generation; a regroup that fails or is cancelled rolls
+  back and leaves the previous one complete. `cat_checks.object_ref` is the
+  part_ref as text for a series, the StudyInstanceUID for a study and the
+  source_id as text for a source. `cat_instances` lists the instances of
+  every part in slice order, by sop_key (`<SOPInstanceUID>` for a single
+  frame, `<SOPInstanceUID>#<frame>` for a frame of a multi-frame file): it
+  is what the next regroup compares to keep a part's `part_ref` (overlap
+  above one half of the old part), and `catalog_meta.next_part_ref` makes
+  sure a ref that was given up is never given out again. Previews of
+  fingerprints that no longer exist are deleted after the commit.
 - `pending_identifiers`: the PatientID and accession number of each study
   and where they came from, which the merge copies into `identifiers`; they
   stay until the catalog is deleted (OPEN_QUESTIONS #25).
 
-It holds relative paths, plain PatientIDs and accession numbers, `pid:`
-links and folder labels, so it lives inside the project folder and goes with
-"Remove Identifiers". The app never writes it.
+Its text primary keys (`catalog_meta.key`, `pending_identifiers.study_uid`,
+`cat_studies.study_uid`) are declared `NOT NULL`, as are those of v2's
+`patient_links`, `project_meta` and `key_counters`: SQLite accepts NULL in a
+primary key that is not an INTEGER one, and a single NULL `study_uid` would
+make the merge's `study_uid NOT IN (SELECT study_uid FROM idx.cat_studies)`
+NULL for every study, so that none would be marked gone again.
+
+It holds no name and no birth date, but much that can identify a patient:
+plain PatientIDs and accession numbers in `pending_identifiers` and, per
+file, in `files.patient_id` and `files.accession_number`; HMAC links
+(`pid:` per file and per study, `issuer:` per file, the candidates'
+`folder:` links); folder labels in `cat_id_candidates.label`; relative paths
+in `files.rel_path` and `bad_dirs.rel_dir`, which carry folder names; and
+free text as the scanner wrote it (study and series descriptions, protocol
+names). So it lives inside the project folder, owner-only (`index/` 0700,
+`catalog.sqlite` and its journal 0600, ADR 0029), and goes with "Remove
+Identifiers"; the scan that rebuilds it without a link key writes no
+identifier, link or label, but records the relative paths again, because
+they are what opens a file. The app never writes it.
 `test_the_merge_never_writes_the_catalog` holds that the merge writes
 nothing to it whether it is attached read-only or not; attaching it
 read-only where the system SQLite accepts URI file names, and reading folder
