@@ -1,6 +1,7 @@
 # ADR 0017: A per-case PDF report, drawn from the export's numbers by code signed in the bundle
 
-- Status: accepted; supersedes point 5 of [ADR 0003](0003-app-store-ground-rules.md)
+- Status: accepted; supersedes point 5 of [ADR 0003](0003-app-store-ground-rules.md); built as
+  [ADR 0032](0032-the-case-report-as-built.md) records
 - Date: 2026-10-04
 - Plan section: §1, §3, §9, §11, §12, §13, §14, §16, §17, §18
 

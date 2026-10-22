@@ -119,6 +119,41 @@ project's `exports/` folder, with a methods text to cite. The first export
 locks its run: a later change of settings starts a new run, so the numbers
 of an export can always be traced to one set of versions.
 
+### Case reports
+
+Turn on **Case report per segmented series (PDF)** in the export, or
+Control-click series under **Results & QC** and choose **Create Case
+Reports** to make them for those patients alone. Each report is one A4 PDF
+per segmented series, in `exports/<name>_reports/`, named
+`P0001_t1_s1_case_report.pdf`: the volume and density of every structure
+with the catalog's names, the QC status, images of the segmentations, the
+definitions, the checks the report ran, the methods text, the versions and
+the references with the licence of the MOOSE weights.
+
+A case report is research documentation, not a medical report. It shows
+values as measured, without reference values and without any assessment,
+and every page says that it is not for clinical use and not a medical
+device. It does not belong in the patient record.
+
+- Cases are named by pseudonym only, whatever the identifier setting.
+  Dates are days since the first study; the year, or the full date after a
+  warning, only when the export chose them.
+- A rejected series gets no report. An excluded structure stays empty with
+  its reason; an unreviewed series says so on every page.
+- The report is not drawn when a structure has no name, or when a mask no
+  longer has the voxel count of the export; the message names the reason.
+  A model whose left and right labels lie mostly on the wrong side of the
+  midline is not shown, and a single label on the wrong side is marked.
+- Coronal and sagittal images end below the neck, at the lowest of the
+  head region, the C7 vertebra and the top of the lungs, so that no image
+  shows a face; without such a landmark there are none. Brain and thyroid
+  appear in the tables only.
+- **Open in Preview** opens the reports for reading and printing. **Save a
+  Copy…** copies them to a folder you choose and warns before iCloud Drive,
+  a network volume or a removable disk.
+- A report shows the values when it is drawn. After a QC change, create it
+  again.
+
 ## 7. Removing identifiers
 
 **File → Remove Identifiers…** deletes every patient ID and accession

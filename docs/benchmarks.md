@@ -431,4 +431,36 @@ converts every element of the header once instead (`read.Flat`).
 
 ## Viewer scroll rate
 
-Target ≥ 30 frames/s at 512×512 on an M1 (plan §9). Not measured yet (M4).
+Target ≥ 30 frames/s at 512×512 on an M1 (plan §9), a budget of 33 ms per
+frame. Measured with `swift test -c release --filter ViewerSpeed`: one axial
+frame of 512 × 512 through the window table, with the overlays of ten models,
+took **5.1 ms on the M4 Pro** (2026-10-23, Xcode 27, macOS 27.0.1), about
+200 frames/s. The frame is computed only; drawing it through SwiftUI is not
+in this number. The M1 with 16 GB is still open.
+
+## Case report
+
+The public ACRIN case (one CT, 512 × 512 × 311 at 0.98 × 0.98 × 3.27 mm, ten
+models, 144 structures), run R20261022T214244, on the M4 Pro (2026-10-23,
+macOS 27.0.1). The content file comes from the export job with
+`case_reports`, the PDF from `CaseReportRenderer` in a release build, the
+project and its viewer cache on the Ludwig T7 over USB.
+
+| what | value |
+|---|---|
+| content file | 48.8 kB |
+| PDF | 14 pages, 14 images, 1.68 MB (DejaVu Sans embedded as subsets) |
+| masks checked against the export's voxel counts | 144 of 144 agree |
+| time per report, cache read cold from the T7 | 1.86 s |
+| time per report, cache in memory | 0.27 s |
+| the same report drawn in the sandboxed Debug app | written, audited with both SHA-256 |
+
+The cold time is mostly reading 1.2 GB of viewer cache (the CT and ten label
+volumes) from the external disk: the label pass over 81 million voxels per
+model runs the models side by side. ADR 0017's spike asked for under 1 s
+per case; that holds once the cache is read, and a batch of reports for one
+patient reads each series' cache once. The volume of every structure in the
+content file stands in the PDF as the report formats it, except the five
+lung lobes of the organs model, which the lungs model's lobes replace
+(ADR 0017 section 1); `swift test -c release --filter reportsOfARealProject`
+with `BCOA_REPORT_PROJECT` set checks that on any project.
