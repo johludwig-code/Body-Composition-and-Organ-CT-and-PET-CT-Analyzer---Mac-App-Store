@@ -299,14 +299,35 @@ public enum StoreMigrations {
 public enum ProjectStore {
     public static let fileName = "project.sqlite"
 
-    public static func open(projectFolder: URL) throws -> DatabaseQueue {
+    /// WAL on a local volume, DELETE otherwise, decided at every open because
+    /// a project folder can move (ADR 0021 decision 1): an export reads the
+    /// database for seconds, and in WAL mode the app's writes do not wait for
+    /// it, but WAL's shared memory is not reliable over SMB or NFS. `isLocal`
+    /// overrides what the volume says, for tests.
+    public static func open(projectFolder: URL, isLocal: Bool? = nil) throws -> DatabaseQueue {
+        let local = isLocal ?? isLocalVolume(projectFolder)
         var configuration = Configuration()
         configuration.foreignKeysEnabled = true
         configuration.label = "project"
+        configuration.busyMode = .timeout(local ? 10 : 30)
+        if local {
+            configuration.journalMode = .wal
+        } else {
+            // Also turns a file back that was left in WAL mode on a local disk.
+            configuration.prepareDatabase { db in
+                try db.execute(sql: "PRAGMA journal_mode = DELETE")
+            }
+        }
         let queue = try DatabaseQueue(
             path: projectFolder.appendingPathComponent(fileName).path, configuration: configuration)
         try StoreMigrations.migrator.migrate(queue)
         return queue
+    }
+
+    /// A volume that does not say is taken as a network one: DELETE mode is
+    /// slower but safe everywhere, WAL is not.
+    public static func isLocalVolume(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) ?? false
     }
 
     public static func inMemory() throws -> DatabaseQueue {

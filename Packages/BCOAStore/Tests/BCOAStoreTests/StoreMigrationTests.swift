@@ -1,3 +1,4 @@
+import Foundation
 import GRDB
 import Testing
 @testable import BCOAStore
@@ -71,4 +72,21 @@ import Testing
         try Int.fetchAll(db, sql: "SELECT last FROM key_counters")
     }
     #expect(counters == [0, 0, 0, 0])
+}
+
+@Test(arguments: [(true, "wal"), (false, "delete")])
+func theJournalModeFollowsTheVolume(local: Bool, mode: String) throws {
+    let folder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("bcoa-journal-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    // Opened the other way first: a project that moves between a local disk
+    // and a share must take the mode of where it is now.
+    _ = try ProjectStore.open(projectFolder: folder, isLocal: !local)
+    let queue = try ProjectStore.open(projectFolder: folder, isLocal: local)
+    let actual = try queue.read { try String.fetchOne($0, sql: "PRAGMA journal_mode") }
+    #expect(actual == mode)
+}
+
+@Test func aTemporaryFolderIsOnALocalVolume() {
+    #expect(ProjectStore.isLocalVolume(FileManager.default.temporaryDirectory))
 }
