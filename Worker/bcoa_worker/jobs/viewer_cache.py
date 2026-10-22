@@ -68,7 +68,11 @@ def run(job: Job, channel: ProtocolChannel) -> None:
             )
         )
         labelmap, resampled = on_ct_grid(sitk.ReadImage(str(path)), ct)
-        labels = sitk.GetArrayViewFromImage(lps(labelmap))
+        # A copy, not a view: a view of the temporary that lps() returns points
+        # into memory freed with it. On Linux CI that read back as noise;
+        # on the Mac it happened to survive.
+        oriented_labels = lps(labelmap)
+        labels = sitk.GetArrayFromImage(oriented_labels)
         top = int(labels.max()) if labels.size else 0
         dtype, suffix = ("<u1", "u8") if top < 256 else ("<u2", "u16")
         name = f"labels_{model}.{suffix}"
