@@ -191,6 +191,12 @@ def main() -> int:
                 "licence": "CC-BY-4.0",
             }
         )
+        # The labels go into the lock as well (ADR 0017 section 11), so that the
+        # name catalog's test sees every model without a bundle that has them.
+        if args.update_lock:
+            lock["models"][model]["labels"] = labels_of(folder)
+        elif lock["models"][model].get("labels", labels_of(folder)) != labels_of(folder):
+            raise SystemExit(f"{model}: labels differ from {args.lock.name}")
         print(f"[models] {model}: {len(files)} files", flush=True)
 
     manifest = {"manifest_version": 1, "moosez": SUPPORTED_MOOSEZ, "models": entries}
