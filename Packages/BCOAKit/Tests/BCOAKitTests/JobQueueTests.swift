@@ -123,3 +123,47 @@ private func waitUntil(_ queue: JobQueue, is status: JobStatus) async throws {
     // A project that never ran a job has no such folder; that is not an error.
     try JobQueue.removeLeftoverJobFiles(projectDir: project.appendingPathComponent("never-opened"))
 }
+
+/// Records the order of finalize calls and of launches.
+private actor Timeline {
+    var events: [String] = []
+    func add(_ event: String) { events.append(event) }
+}
+
+private final class TimelineLauncher: WorkerLauncher, @unchecked Sendable {
+    let timeline: Timeline
+    init(timeline: Timeline) { self.timeline = timeline }
+
+    func launch(_ job: WorkerJob, jobFile: URL) throws -> WorkerProcess {
+        let timeline = timeline
+        let id = job.jobID
+        Task { await timeline.add("launch \(id)") }
+        throw CancellationError()
+    }
+}
+
+@Test func theFinalizeHookRunsBeforeTheNextJobOfTheGroup() async throws {
+    let project = temporaryProject()
+    defer { try? FileManager.default.removeItem(at: project) }
+    let timeline = Timeline()
+    let queue = JobQueue(
+        launcher: TimelineLauncher(timeline: timeline), supervisor: WorkerSupervisor(),
+        finalize: { finished in
+            // Long enough that a second scan would start meanwhile if the
+            // queue did not wait for the hook.
+            try? await Task.sleep(for: .milliseconds(100))
+            await timeline.add("finalize \(finished.id) \(finished.status.rawValue)")
+        })
+    for id in ["j_one", "j_two"] {
+        await queue.enqueue(WorkerJob(
+            jobID: id, kind: .index, projectDir: project, resourcesDir: project,
+            payload: ["mode": .string("scan")]))
+    }
+    for _ in 0..<500 {
+        if await queue.jobs.allSatisfy({ $0.status == .failed }) { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    try await Task.sleep(for: .milliseconds(50))
+    let events = await timeline.events
+    #expect(events == ["launch j_one", "finalize j_one failed", "launch j_two", "finalize j_two failed"])
+}

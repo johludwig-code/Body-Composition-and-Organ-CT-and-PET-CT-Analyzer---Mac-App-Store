@@ -50,28 +50,43 @@ public struct BundledWorkerLauncher: WorkerLauncher {
     }
 }
 
+extension WorkerJob {
+    /// Jobs of one group run one at a time (ADR 0021 decision 4): index jobs
+    /// that scan or regroup all write the catalog, and the merge of one must
+    /// come before the next starts. A previews job only reads it briefly and
+    /// stays outside.
+    public var exclusiveGroup: String? {
+        guard kind == .index, case .string(let mode) = payload["mode"] else { return nil }
+        return mode == "scan" || mode == "regroup" ? "catalog" : nil
+    }
+}
+
 public enum QueuePolicy {
     /// Index and export jobs are I/O-bound and may run beside a segmentation;
     /// more than this many at once only contend for the disk.
     public static let maxParallelLightJobs = 2
 
-    /// Which queued jobs to start now, in queue order. Pure, so the rule that
-    /// matters (never two GPU jobs at once) is tested without processes.
+    /// Which queued jobs to start now, in queue order. Pure, so the rules
+    /// that matter (never two GPU jobs at once, never two jobs of one
+    /// exclusive group) are tested without processes. A job counts as running
+    /// until its finalize hook has returned.
     public static func jobsToStart(_ jobs: [QueuedJob], paused: Bool) -> [String] {
         guard !paused else { return [] }
         var gpuBusy = jobs.contains { $0.status == .running && $0.job.kind.needsExclusiveGPU }
         var lightRunning = jobs.filter { $0.status == .running && !$0.job.kind.needsExclusiveGPU }.count
+        var busyGroups = Set(jobs.filter { $0.status == .running }.compactMap(\.job.exclusiveGroup))
         var start: [String] = []
         for job in jobs where job.status == .queued {
+            if let group = job.job.exclusiveGroup, busyGroups.contains(group) { continue }
             if job.job.kind.needsExclusiveGPU {
-                if !gpuBusy {
-                    gpuBusy = true
-                    start.append(job.id)
-                }
-            } else if lightRunning < maxParallelLightJobs {
+                guard !gpuBusy else { continue }
+                gpuBusy = true
+            } else {
+                guard lightRunning < maxParallelLightJobs else { continue }
                 lightRunning += 1
-                start.append(job.id)
             }
+            if let group = job.job.exclusiveGroup { busyGroups.insert(group) }
+            start.append(job.id)
         }
         return start
     }
@@ -100,6 +115,11 @@ public actor JobQueue {
     /// deletes while a failed, paused or interrupted job may still wait to be
     /// run (ADR 0024). A handler that throws fails the job without starting it.
     public typealias PrepareHandler = @Sendable (WorkerJob) async throws -> WorkerJob
+    /// Runs after a job's worker has exited and before the queue starts the
+    /// next job of its exclusive group, with the job's final status: the
+    /// merge of the catalog an index job wrote goes here (ADR 0021 decision
+    /// 4). The job counts as running until the handler returns.
+    public typealias FinalizeHandler = @Sendable (QueuedJob) async -> Void
 
     public private(set) var jobs: [QueuedJob] = []
     public private(set) var paused = false
@@ -108,6 +128,7 @@ public actor JobQueue {
     private let supervisor: WorkerSupervisor
     private let watchdog: Duration
     private let prepare: PrepareHandler
+    private let finalize: FinalizeHandler
     private let onChange: ChangeHandler
     private let onEvent: EventHandler
     private var workers: [String: WorkerProcess] = [:]
@@ -117,6 +138,7 @@ public actor JobQueue {
         supervisor: WorkerSupervisor = .shared,
         watchdog: Duration = .seconds(300),
         prepare: @escaping PrepareHandler = { $0 },
+        finalize: @escaping FinalizeHandler = { _ in },
         onChange: @escaping ChangeHandler = { _ in },
         onEvent: @escaping EventHandler = { _, _ in }
     ) {
@@ -124,6 +146,7 @@ public actor JobQueue {
         self.supervisor = supervisor
         self.watchdog = watchdog
         self.prepare = prepare
+        self.finalize = finalize
         self.onChange = onChange
         self.onEvent = onEvent
     }
@@ -291,8 +314,15 @@ public actor JobQueue {
         supervisor.unregister(jobID: jobID)
         if let index = jobs.firstIndex(where: { $0.id == jobID }) {
             let watchdogFired = jobs[index].errorCode == "watchdog_timeout"
-            await update(index) {
-                $0.status = watchdogFired ? .failed : QueuePolicy.finalStatus(done: done, exitStatus: exitStatus)
+            let status = watchdogFired ? .failed : QueuePolicy.finalStatus(done: done, exitStatus: exitStatus)
+            var finished = jobs[index]
+            finished.status = status
+            // Still `.running` in `jobs` while the hook runs, so that a
+            // schedule() triggered meanwhile by another job's end cannot start
+            // the next job of the group before the merge is done.
+            await finalize(finished)
+            if let index = jobs.firstIndex(where: { $0.id == jobID }) {
+                await update(index) { $0.status = status }
             }
         }
         await schedule()
