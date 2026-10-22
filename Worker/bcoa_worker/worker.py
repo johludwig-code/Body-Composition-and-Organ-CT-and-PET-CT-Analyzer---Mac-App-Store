@@ -47,6 +47,9 @@ JobHandler = Callable[[Job, ProtocolChannel], None]
 # `requests` for the whole process, and moosez imports it at module level, so
 # a segment or selftest job that imported the index package would fail.
 _JOB_MODULES = {
+    "convert": "bcoa_worker.jobs.convert",
+    "metrics": "bcoa_worker.jobs.metrics",
+    "viewer_cache": "bcoa_worker.jobs.viewer_cache",
     "export": "bcoa_worker.jobs.export",
     "selftest": "bcoa_worker.jobs.selftest",
     "spike_s2": "bcoa_worker.jobs.spike_s2",
