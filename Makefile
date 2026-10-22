@@ -65,10 +65,13 @@ app:
 
 # Re-signs a built app with a Developer ID identity for the DMG channel.
 # Store and TestFlight builds are archived and signed by Xcode instead.
+# With the default IDENTITY "-" this signs ad hoc, without the timestamp
+# server (only real identities can have a secure timestamp): a DMG for the
+# owner's own Macs, not for notarisation.
 sign:
 	Scripts/sign_tree.sh "$(APP)/Contents/Resources/python" "$(IDENTITY)" App/Resources/Helper.entitlements
-	codesign --force --sign "$(IDENTITY)" --timestamp --options runtime \
-	  --entitlements App/Resources/BCOAnalyzer.entitlements "$(APP)"
+	codesign --force --sign "$(IDENTITY)" $(if $(filter -,$(IDENTITY)),--timestamp=none,--timestamp) \
+	  --options runtime --entitlements App/Resources/BCOAnalyzer.entitlements "$(APP)"
 
 verify:
 	python3 Scripts/verify_bundle.py "$(APP)"
