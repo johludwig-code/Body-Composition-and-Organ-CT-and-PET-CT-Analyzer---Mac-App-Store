@@ -258,3 +258,21 @@ private func sha256(_ url: URL) throws -> String {
     }
     #expect(try IndexStore.folderCandidates(project: fixture.project, catalog: fixture.catalog).isEmpty)
 }
+
+@Test func aStudyAssignedToAnotherPatientMovesAndTheEmptyPatientGoes() throws {
+    let fixture = try Fixture()
+    try fixture.writeCatalog(generation: 1, linkKeyID: "0000000000000000")
+    try IndexStore.mergeIfPending(project: fixture.project, catalog: fixture.catalog)
+    // Without valid links each study became a patient of its own.
+    let patients = try fixture.project.read { try String.fetchAll($0, sql: "SELECT patient_key FROM patients ORDER BY 1") }
+    #expect(patients.count == 2)
+    let second = try #require(try fixture.project.read {
+        try String.fetchOne($0, sql: "SELECT study_key FROM studies WHERE patient_key = ?", arguments: [patients[1]])
+    })
+    try fixture.project.write { try IndexStore.assign(studies: [second], to: patients[0], in: $0, actor: "test") }
+    try fixture.project.read { (db: Database) throws in
+        #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM patients") == 1)
+        #expect(try Int.fetchOne(db, sql: "SELECT count(DISTINCT patient_key) FROM studies") == 1)
+        #expect(try String.fetchOne(db, sql: "SELECT action FROM audit_log ORDER BY id DESC LIMIT 1") == "studies_assigned")
+    }
+}

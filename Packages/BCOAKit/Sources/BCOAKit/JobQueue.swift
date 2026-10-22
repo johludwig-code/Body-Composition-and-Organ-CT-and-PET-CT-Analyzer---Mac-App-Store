@@ -176,8 +176,10 @@ public actor JobQueue {
         }
     }
 
-    public func retryFailed() async {
-        for index in jobs.indices where jobs[index].status == .failed {
+    /// Queues failed jobs again, those `matching` says; the app retries its
+    /// pipeline stages as new jobs instead, with payloads built again.
+    public func retryFailed(matching include: @Sendable (QueuedJob) -> Bool = { _ in true }) async {
+        for index in jobs.indices where jobs[index].status == .failed && include(jobs[index]) {
             await update(index) {
                 $0.status = .queued
                 $0.errorCode = nil

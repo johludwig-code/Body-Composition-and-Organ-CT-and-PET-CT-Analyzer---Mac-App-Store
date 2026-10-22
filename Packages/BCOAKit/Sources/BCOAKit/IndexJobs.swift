@@ -57,6 +57,23 @@ public enum IndexJobs {
              selection: selection, identity: identity, forceReread: false)
     }
 
+    /// Previews of up to 64 parts of one catalog (ADR 0025). Never a link
+    /// key: previews read no identifier.
+    public static func previews(
+        sources: [IndexSource], catalogID: String, partRefs: [Int], sizePx: Int = 256
+    ) -> [String: JSONValue] {
+        [
+            "mode": .string("previews"),
+            "catalog": .string(catalog),
+            "previews_dir": .string(previews),
+            "sources": .array(sources.sorted { $0.id < $1.id }.map(\.json)),
+            "parts": .array(partRefs.prefix(64).map {
+                .object(["catalog_id": .string(catalogID), "part_ref": .number(Double($0))])
+            }),
+            "preview": .object(["size_px": .number(Double(sizePx))]),
+        ]
+    }
+
     /// Key and ID go in together or not at all; null after Remove Identifiers.
     public static func withLinkKey(
         _ payload: [String: JSONValue], key: String?, keyID: String?

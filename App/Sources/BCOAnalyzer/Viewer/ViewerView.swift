@@ -13,13 +13,24 @@ struct ViewerRequest: Codable, Hashable {
 struct ViewerWindow: View {
     @Environment(AppModel.self) private var app
     let request: ViewerRequest
+    /// Made once per window: making it maps the volume and reads the run.
+    @State private var model: ViewerModel?
 
     var body: some View {
-        if let session = app.session {
-            ViewerView(model: ViewerModel(session: session, runID: request.runID, seriesKey: request.seriesKey))
-                .frame(minWidth: 1000, minHeight: 640)
-        } else {
-            ContentUnavailableView("No Project Open", systemImage: "folder")
+        Group {
+            if let model {
+                ViewerView(model: model)
+            } else if app.session == nil {
+                ContentUnavailableView("No Project Open", systemImage: "folder")
+            } else {
+                ProgressView()
+            }
+        }
+        .frame(minWidth: 1000, minHeight: 640)
+        .task {
+            if model == nil, let session = app.session {
+                model = ViewerModel(session: session, runID: request.runID, seriesKey: request.seriesKey)
+            }
         }
     }
 }

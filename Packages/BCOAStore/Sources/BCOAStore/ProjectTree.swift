@@ -36,6 +36,10 @@ public struct ProjectTree: Sendable, Equatable {
         public var autoRank: Int?
         public var gone: Bool
         public var checks: [Check]
+        /// The preview's file name (ADR 0025) and the catalog part the
+        /// previews job asks for.
+        public var fingerprint: String
+        public var catalogPart: String?
     }
 
     public struct Study: Sendable, Equatable, Identifiable, Hashable {
@@ -90,7 +94,7 @@ public struct ProjectTree: Sendable, Equatable {
             SELECT series_key, study_key, series_number, modality, description, image_count, slice_count,
                    slice_thickness_mm, z_extent_mm, kernel, kernel_class, manufacturer, scanner_model,
                    contrast_agent, orientation, selected, is_primary, selection_origin,
-                   selection_cohort_id, selection_reason, auto_rank, index_state
+                   selection_cohort_id, selection_reason, auto_rank, index_state, fingerprint, catalog_part
             FROM series
             ORDER BY study_key, series_number IS NULL, series_number, series_uid, part
             """) {
@@ -107,7 +111,8 @@ public struct ProjectTree: Sendable, Equatable {
                 selected: row["selected"], primary: row["is_primary"], origin: row["selection_origin"],
                 cohortLabel: cohort.flatMap { cohorts[$0] }, reasonJSON: row["selection_reason"],
                 autoRank: row["auto_rank"], gone: (row["index_state"] as String) == "gone",
-                checks: checks["series"]?[key] ?? [])
+                checks: checks["series"]?[key] ?? [], fingerprint: row["fingerprint"],
+                catalogPart: row["catalog_part"])
             seriesByStudy[series.studyKey, default: []].append(series)
         }
 

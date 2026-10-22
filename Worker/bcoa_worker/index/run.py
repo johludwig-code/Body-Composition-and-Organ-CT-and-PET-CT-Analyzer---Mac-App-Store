@@ -144,10 +144,6 @@ class Payload:
 def parse_payload(job: Job) -> Payload:
     raw = job.payload
     mode = raw.get("mode")
-    if mode == "previews":
-        # ADR 0025 builds them; until then the app gets the same answer as
-        # for any job kind that is not built yet.
-        raise JobFailure("unsupported_job", "Index mode 'previews' is not built yet")
     if mode not in ("scan", "regroup"):
         raise ProtocolError("unknown index mode")
     catalog = raw.get("catalog")
@@ -1002,6 +998,13 @@ def index(
 
 def run(job: Job, channel: ProtocolChannel) -> None:
     """The handler of job kind `index`."""
+    if job.payload.get("mode") == "previews":
+        # A light job outside the catalog's group: no lock, one short read,
+        # and no key in its payload (ADR 0025 decision 1).
+        from bcoa_worker.index.previews import run_previews
+
+        channel.send(Result(job.job_id, run_previews(job, channel)))
+        return
     with _cancel_on_sigterm() as cancel:
         try:
             result = _run(job, channel, cancel)

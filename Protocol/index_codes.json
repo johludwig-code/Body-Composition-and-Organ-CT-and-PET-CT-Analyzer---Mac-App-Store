@@ -594,7 +594,9 @@
       "codes": [
         {"code": "index_failed", "recoverable": false},
         {"code": "catalog_busy", "recoverable": true},
-        {"code": "link_key_mismatch", "recoverable": false}
+        {"code": "link_key_mismatch", "recoverable": false},
+        {"code": "catalog_missing", "recoverable": true},
+        {"code": "catalog_changed", "recoverable": true}
       ]
     },
     "split_reason": {

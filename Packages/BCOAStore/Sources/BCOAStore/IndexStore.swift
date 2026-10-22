@@ -439,3 +439,24 @@ extension IndexStore {
         return files
     }
 }
+
+extension IndexStore {
+    /// "Assign to Patient…" (ADR 0024 decision 4): the studies move to the
+    /// patient chosen, emptied patients go, and the automatic selection and
+    /// ages follow, in one transaction with the audit row `studies_assigned`.
+    public static func assign(studies: [String], to patientKey: String, in db: Database, actor: String,
+                              now: Date = Date()) throws {
+        try db.execute(sql: SelectionSQL.inputs)
+        try db.execute(sql: IdentitySQL.inputs)
+        try db.execute(
+            sql: "INSERT INTO temp.id_param (now, actor, keep_identifiers, level) VALUES (?, ?, ?, NULL)",
+            arguments: [iso(now), actor, try identifiersRemoved(db) ? 0 : 1])
+        for study in studies {
+            try db.execute(sql: "INSERT OR REPLACE INTO temp.id_assign VALUES (?, ?)", arguments: [study, patientKey])
+        }
+        try db.execute(sql: IdentitySQL.assignStudy)
+        try db.execute(sql: SelectionSQL.applyAuto)
+        try db.execute(sql: SelectionSQL.repairPrimary)
+        try db.execute(sql: IndexSQL.patientAges)
+    }
+}

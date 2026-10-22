@@ -12,6 +12,7 @@ struct PatientsView: View {
     @State private var askingCohortName = false
     @State private var confirmingIDs = false
     @State private var editingSettings = false
+    @State private var assigning: [String]?
     @AppStorage("bulkThinCTMaxMM") private var bulkMaxMM = 3.0
 
     var body: some View {
@@ -37,6 +38,12 @@ struct PatientsView: View {
                         }
                     }
                     .width(28)
+                    TableColumn("") { row in
+                        if case .series(let series, _) = row {
+                            PreviewCell(url: session.previewURL(series), version: session.previewsVersion)
+                        }
+                    }
+                    .width(36)
                     TableColumn("Patient / Study / Series") { row in
                         TreeTitle(row: row)
                     }
@@ -78,6 +85,8 @@ struct PatientsView: View {
                     let studies = TreeRow.studyKeys(ids, in: rows)
                     Button("Apply Auto-Selection") { session.apply(.applyAuto(studies: studies)) }
                         .disabled(studies.isEmpty)
+                    Button("Assign to Patient…") { assigning = studies }
+                        .disabled(studies.isEmpty)
                 }
             }
             Divider()
@@ -111,6 +120,9 @@ struct PatientsView: View {
             }
         }
         .sheet(isPresented: $confirmingIDs) { ConfirmIDsSheet().environment(session) }
+        .sheet(item: Binding(get: { assigning.map(StudyList.init) }, set: { assigning = $0?.keys })) {
+            AssignSheet(studies: $0.keys).environment(session)
+        }
         .sheet(isPresented: $editingSettings) { SelectionSettingsSheet().environment(session) }
         .alert("Save Selection as Cohort", isPresented: $askingCohortName) {
             TextField("Name", text: $cohortName)
@@ -364,6 +376,29 @@ private struct ChecksCell: View {
                 .foregroundStyle(warning ? .orange : .secondary)
                 .help(checks.map(CodeText.check).joined(separator: "\n"))
                 .accessibilityLabel(Text(checks.map(CodeText.check).joined(separator: ". ")))
+        }
+    }
+}
+
+/// The studies a sheet acts on, as an item for `.sheet(item:)`.
+struct StudyList: Identifiable {
+    var keys: [String]
+    var id: String { keys.joined(separator: ",") }
+}
+
+/// The middle slice of a series, from `index/previews` (ADR 0025). `version`
+/// makes the cell look again when previews arrive.
+private struct PreviewCell: View {
+    let url: URL?
+    let version: Int
+
+    var body: some View {
+        if let url, let image = NSImage(contentsOf: url) {
+            Image(nsImage: image).resizable().interpolation(.medium).aspectRatio(contentMode: .fit)
+                .frame(width: 28, height: 28)
+                .accessibilityLabel(Text("Preview"))
+        } else {
+            Color.clear.frame(width: 28, height: 28)
         }
     }
 }

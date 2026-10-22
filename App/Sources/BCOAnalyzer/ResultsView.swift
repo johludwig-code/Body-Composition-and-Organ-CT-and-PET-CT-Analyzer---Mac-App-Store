@@ -257,6 +257,14 @@ struct AnalyzeSheet: View {
             .pickerStyle(.radioGroup)
             let count = session.previewCount(models: models, device: device)
             Text("\(count) selected CT series will be analyzed.")
+            // Plan §8: about 250 MB per series while it is converted and
+            // cached, and some MB per model; a margin of 2 GB besides.
+            let needed = Int64(count) * (250 + Int64(models.count) * 60) * 1_000_000 + 2_000_000_000
+            if let free = session.freeBytes, free < needed {
+                Label("The project's disk has \(ByteCountFormatter.string(fromByteCount: free, countStyle: .file)) free; this batch may need about \(ByteCountFormatter.string(fromByteCount: needed, countStyle: .file)).",
+                      systemImage: "externaldrive.badge.exclamationmark")
+                    .foregroundStyle(.orange)
+            }
             if MachineInfo.memoryGB < 16 {
                 Label("MOOSE recommends at least 16 GB of memory; this Mac has \(MachineInfo.memoryGB) GB.",
                       systemImage: "exclamationmark.triangle")

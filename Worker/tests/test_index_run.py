@@ -633,14 +633,16 @@ def test_other_folder_id_settings_regroup_without_reading(tmp_path: Path) -> Non
     assert again["changed"] is False
 
 
-def test_previews_are_not_built_yet(tmp_path: Path) -> None:
+def test_previews_without_a_catalog_ask_for_a_scan(tmp_path: Path) -> None:
+    # Previews are built now (test_previews.py); without a catalog there is
+    # nothing to make them from, and a scan comes first.
     job = index_job(tmp_path / "Study.bcoaproj", {})
     payload = job["payload"]
     payload.update(mode="previews", parts=[{"catalog_id": "0" * 32, "part_ref": 1}])
     for key in ("link_key", "link_key_id", "scan_sources"):
         payload.pop(key)
     error = _failure(tmp_path, job)
-    assert (error["code"], error["recoverable"]) == ("unsupported_job", False)
+    assert (error["code"], error["recoverable"]) == ("catalog_missing", True)
 
 
 # ------------------------------------------------------------------ refusals

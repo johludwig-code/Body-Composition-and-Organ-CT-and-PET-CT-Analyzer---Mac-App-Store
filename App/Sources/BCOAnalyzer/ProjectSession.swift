@@ -51,6 +51,12 @@ final class ProjectSession {
     @ObservationIgnored private var recordedStatus: [String: JobStatus] = [:]
     /// Files each job wrote, from its artifact events.
     @ObservationIgnored var artifacts: [String: [(path: String, sha256: String)]] = [:]
+    /// Held while pipeline jobs run, so the Mac does not sleep in the middle
+    /// of a batch (plan §8).
+    @ObservationIgnored private var activity: NSObjectProtocol?
+    @ObservationIgnored private var previewsAsked: Set<String> = []
+    /// Bumped when previews arrive, so the tree draws them.
+    var previewsVersion = 0
 
     var url: URL { folder.url }
     var catalogURL: URL { url.appendingPathComponent(IndexStore.catalogPath) }
@@ -288,6 +294,10 @@ final class ProjectSession {
     }
 
     private func finalize(_ job: QueuedJob) async {
+        if job.job.payload["mode"]?.stringValue == "previews" {
+            previewsVersion += 1
+            return
+        }
         if pipelineJobs[job.id] != nil {
             await finalizeStage(job)
             reload()
@@ -305,8 +315,15 @@ final class ProjectSession {
             await merge()
             // A job that ended before its catalog said anything about a source
             // leaves it indexing; it is interrupted, and continues next time.
+            let scanned: [Int] = {
+                if case .array(let ids) = job.job.payload["scan_sources"] { return ids.compactMap(\.intValue) }
+                return []
+            }()
             write { db in
-                try db.execute(sql: "UPDATE sources SET state = 'interrupted' WHERE state = 'indexing'")
+                for id in scanned {
+                    try db.execute(sql: "UPDATE sources SET state = 'interrupted' WHERE id = ? AND state = 'indexing'",
+                                   arguments: [id])
+                }
             }
             if job.status == .failed {
                 let code = job.errorCode ?? "unknown"
@@ -342,6 +359,42 @@ final class ProjectSession {
             message = String(localized: "The index could not be applied yet; it is tried again after the next job.")
         }
         reload()
+        requestPreviews()
+    }
+
+    /// The preview of a series, once the previews job has made it.
+    func previewURL(_ series: ProjectTree.Series) -> URL? {
+        let url = url.appendingPathComponent(IndexStore.previewsPath).appendingPathComponent("\(series.fingerprint).png")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Previews for every current series that has none yet, 64 parts per
+    /// light job (ADR 0025). Asked once per series and session: a part the
+    /// worker skips (burned-in text, not an image) is not asked again.
+    func requestPreviews() {
+        guard !jobs.contains(where: { $0.job.payload["mode"]?.stringValue == "previews" && !$0.status.isFinished })
+        else { return }
+        var byCatalog: [String: [Int]] = [:]
+        for patient in tree.patients {
+            for study in patient.studies {
+                for series in study.series where !series.gone && previewURL(series) == nil
+                    && !previewsAsked.contains(series.key) {
+                    guard let part = series.catalogPart, let colon = part.lastIndex(of: ":"),
+                          let ref = Int(part[part.index(after: colon)...])
+                    else { continue }
+                    previewsAsked.insert(series.key)
+                    byCatalog[String(part[..<colon]), default: []].append(ref)
+                }
+            }
+        }
+        let sources = indexSources()
+        for (catalogID, refs) in byCatalog {
+            for start in stride(from: 0, to: refs.count, by: 64) {
+                let chunk = Array(refs[start..<min(start + 64, refs.count)])
+                enqueue(.index, prefix: "previews",
+                        payload: IndexJobs.previews(sources: sources, catalogID: catalogID, partRefs: chunk))
+            }
+        }
     }
 
     // MARK: Selection
@@ -391,8 +444,11 @@ final class ProjectSession {
         Task { await queue.cancel(jobID: jobID) }
     }
 
+    /// Index and export jobs as they were; pipeline stages are queued as new
+    /// jobs by `retryFailedStages`, so they are left out here.
     func retryFailed() {
-        Task { await queue.retryFailed() }
+        let pipeline = Set(pipelineJobs.keys)
+        Task { await queue.retryFailed { !pipeline.contains($0.id) } }
     }
 
     private func upsert(_ job: QueuedJob) {
@@ -401,6 +457,7 @@ final class ProjectSession {
         } else {
             jobs.append(job)
         }
+        updateActivity()
         // A pipeline job's state is written when it changes, not with every
         // progress line; its end is written by the finalize hook.
         if pipelineJobs[job.id] != nil, recordedStatus[job.id] != job.status, !job.status.isFinished {
@@ -423,6 +480,24 @@ final class ProjectSession {
         default:
             break
         }
+    }
+
+    private func updateActivity() {
+        let busy = jobs.contains { pipelineJobs[$0.id] != nil && !$0.status.isFinished }
+        if busy, activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .idleSystemSleepDisabled],
+                reason: "Analyzing CT series")
+        } else if !busy, let token = activity {
+            ProcessInfo.processInfo.endActivity(token)
+            activity = nil
+        }
+    }
+
+    /// Free space on the project's volume, for the check before a batch.
+    var freeBytes: Int64? {
+        try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            .volumeAvailableCapacityForImportantUsage
     }
 
     var isIndexing: Bool {

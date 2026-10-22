@@ -289,3 +289,45 @@ struct RemoveIdentifiersSheet: View {
         .onAppear { exports = session.exportsWithIdentifiers() }
     }
 }
+
+extension ProjectSession {
+    func assign(studies: [String], to patient: String) {
+        let actor = reviewer
+        write { try IndexStore.assign(studies: studies, to: patient, in: $0, actor: actor) }
+        reload()
+    }
+}
+
+/// "Assign to Patient…": the chosen studies join an existing patient.
+struct AssignSheet: View {
+    @Environment(ProjectSession.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    let studies: [String]
+    @State private var patient = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Assign to Patient").font(.title2.bold())
+            Text("\(studies.count) studies move to the patient chosen here. A patient left without studies is removed; its pseudonym is never used again.")
+                .foregroundStyle(.secondary)
+            Picker("Patient", selection: $patient) {
+                ForEach(session.tree.patients) { patient in
+                    Text("\(patient.pseudonym) — \(patient.studies.count) studies").tag(patient.key)
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Assign") {
+                    session.assign(studies: studies, to: patient)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(patient.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .onAppear { patient = session.tree.patients.first?.key ?? "" }
+    }
+}

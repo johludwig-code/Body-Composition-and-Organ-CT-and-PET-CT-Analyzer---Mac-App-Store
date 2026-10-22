@@ -16,6 +16,10 @@ final class SliceNSView: NSView {
     var caption = "" { didSet { needsDisplay = true } }
     var zoom: CGFloat = 1 { didSet { needsDisplay = true } }
 
+    /// What the images were last made from; the info line redraws the
+    /// window on every mouse move, and the slice need not be made again then.
+    var renderKey = ""
+
     var onClick: ((Int, Int) -> Void)?
     var onHover: ((Int, Int) -> Void)?
     var onScroll: ((Int) -> Void)?
@@ -168,13 +172,25 @@ struct SliceView: NSViewRepresentable {
         }
         let slice = model.slice(plane)
         let width = mapping.width, height = mapping.height
+        let visible = model.models.map { "\($0):\((model.visible[$0] ?? []).sorted())" }.joined(separator: ";")
+        let key = [
+            model.seriesKey, "\(slice)", "\(model.window.width)/\(model.window.center)", visible,
+            "\(model.opacity)", "\(model.contour)", "\(model.showOverlays)", "\(model.neurological)",
+            "\(model.highlighted.map { "\($0.model)\($0.label)" } ?? "")",
+        ].joined(separator: "|")
+        let rendered = view.renderKey == key
         view.pixelSize = CGSize(width: width, height: height)
         let spacing = mapping.pixelSpacing
         view.spacing = CGSize(width: spacing.horizontal, height: spacing.vertical)
         view.letters = mapping.letters
-        view.gray = Self.image(gray: volume.graySlice(mapping, slice: slice, window: model.window),
-                               width: width, height: height)
-        if model.showOverlays {
+        if !rendered {
+            view.renderKey = key
+            view.gray = Self.image(gray: volume.graySlice(mapping, slice: slice, window: model.window),
+                                   width: width, height: height)
+        }
+        if rendered {
+            // Images are current; only the crosshair and callbacks below.
+        } else if model.showOverlays {
             let layers = model.models.map { name in
                 OverlayRenderer.Layer(
                     labels: volume.labelSlice(name, mapping: mapping, slice: slice),

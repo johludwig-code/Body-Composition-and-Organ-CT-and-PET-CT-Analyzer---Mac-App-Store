@@ -62,3 +62,14 @@ private func sources() -> [IndexSource] {
         #expect(result.sources[1]?.state == "complete")
     }
 }
+
+@Test func aPreviewsPayloadMatchesTheFixtureAndHoldsNoKey() throws {
+    let url = projectRoot.appendingPathComponent("Protocol/fixtures/jobs/index_previews.json")
+    let fixture = try JSONDecoder().decode(WorkerJob.self, from: Data(contentsOf: url))
+    let built = IndexJobs.previews(sources: [], catalogID: String(repeating: "3f", count: 16), partRefs: Array(1...70))
+    #expect(Set(built.keys) == Set(fixture.payload.keys))
+    #expect(built["link_key"] == nil)
+    if case .array(let parts) = built["parts"] { #expect(parts.count == 64) } else { Issue.record("no parts") }
+    #expect(WorkerJob(jobID: "j_p", kind: .index, projectDir: projectRoot, resourcesDir: projectRoot,
+                      payload: built).exclusiveGroup == nil)
+}
