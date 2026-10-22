@@ -51,6 +51,44 @@ protobuf compiler. Still in the runtime and candidates for trimming:
 `huggingface_hub` and `hf_xet` (15 MiB together by `du` in the same run, about 16 MB) and `httpx`.
 `requests` and `urllib3` stay, because moosez imports them (ADR 0016).
 
+## On the owner's Mac (M4 Pro)
+
+Apple M4 Pro, 24 GB, macOS 27.0.1, torch 2.14.1; repository, runtime,
+models and projects on an external USB SSD (Samsung T7). Measured with
+`/usr/bin/time -l` around the worker, 22 October 2026, public data only.
+
+| step | input | wall time | peak footprint |
+|---|---|---|---|
+| self-test with the tiny inference, organ model | 64³ phantom | 20.8 s | 6.73 GB |
+| index scan, first | 3 sources, 2 048 files (ACRIN 042, Pancreas-CT 0001, LIDC-IDRI-0001) | under 3 s | 45 MB |
+| index rescan, unchanged | same | walk 0.007 s | |
+| convert (dcm2niix) | ACRIN 042 whole body, 307 files | 1.7 s | |
+| convert (SimpleITK fallback, ADR 0031) | Pancreas-CT 0001, 240 files | 0.8 s | |
+| segment, organ model, MPS | ACRIN 042 whole body, 512×512×312, 3.26 mm | 105 s | 11.75 GB |
+| metrics, 19 labels | same | 1.1 s | 2.86 GB |
+| viewer cache | same | 0.7 s | 0.96 GB |
+
+In the app the three CTs of the ACRIN patient went through all four
+stages in about four minutes, one segmentation at a time.
+
+**All ten clinical models in the sandboxed app** (Debug build, MPS, one
+whole-body CT of ACRIN 042, 512×512×311, 3.75 mm; a Release build was
+signed on the same Mac meanwhile, so the times are upper bounds): 22.5 min
+of segmentation in one job, from the labelmaps' times about 1 min each for
+body, cardiac, muscles and ribs, 2 min for body composition, lungs, organs,
+peripheral bones and vertebrae, and 9 min for the digestive model, which
+predicts eight times over (OPEN_QUESTIONS #16); metrics of 144 labels 7 s,
+viewer cache 4 s. 121 of the 144 structures were found; the 23 others are
+bones outside the field of view (20 peripheral bones, two ribs, one
+vertebra). Body composition at L3: skeletal muscle 967 mL at 25 HU,
+subcutaneous fat 1 485 mL at −96 HU, visceral fat 638 mL at −75 HU.
+
+**Viewer (plan §9, 30 images/s at 512²):** one axial frame of 512 × 512, the
+gray slice through the window table and the overlay of ten models, takes
+5.4 ms in a release build (`swift test -c release --filter ViewerSpeed`),
+about 185 frames per second; the three planes of the 1×3 layout together
+about 16 ms.
+
 ## Runtime per model
 
 | model | volume | device | wall time | peak RSS | measured on |
@@ -325,6 +363,71 @@ export's own CSV files:
 Not checked yet: Excel itself and Numbers. Numbers is what opens an XLSX on
 a Mac without Office, and it is said to hold at most 1 000 columns per table
 (a secondary source; OPEN_QUESTIONS #17).
+
+## Import scan
+
+The scan side of the index job (walk, header read, catalog writes) against the
+budgets of ADR 0026 decision 3. Linux build container, Intel Xeon at 2.1 GHz,
+4 cores, 15 GB; Python 3.12, pydicom 3.0.2, SimpleITK 2.5.6; 2026-10-09. The
+trees were written just before, so the page cache was warm. The rows below
+were measured while the regroup was still a stub; the regroup's own numbers
+follow the table.
+
+| tree | full scan | unchanged rescan | peak RSS | budget |
+|---|---|---|---|---|
+| synthetic corpus, 1 780 files, in process | 2.7 s | 0.06 s | – | – |
+| same, worker child as the app starts it | 2.3 s | – | – | – |
+| 10 000 files, one series copied | 9.1 s | 0.17 s | 88 MB | < 60 s and < 2 s |
+| 10 000 files with GE-like private groups | 10.5 s | 0.16 s | – | same |
+| 100 000 files, distinct series | 88.2 s: walk 0.5 s, read 87.6 s | 1.37 s: walk 0.57 s | 124 MB | ≤ 150 s, ≤ 10 s, ≤ 500 MB |
+
+The peak RSS of the 100 000-file row is that of the whole benchmark process,
+which also wrote the tree, so it is an upper bound for the scan. A cancel by
+SIGTERM in the middle of the read, with the shipped batches of 1 000 files,
+was answered with exit 130 in 0.07–0.08 s (three trials over 5 000 files),
+against a budget of 2 s; the next scan read only the files of the batch
+rolled back and those after it. `Worker/tests/test_index_budget.py` holds the
+10 000-file budgets on every run and the 100 000-file ones under `-m slow`;
+`test_index_cancel.py` holds the cancel and the resume.
+
+### The regroup
+
+Same machine and day, with the regroup of ADR 0022 built
+(`index/group.py`). "group" is the regroup's own time as the result reports
+it; "job" is the worker child from start to exit, as the app starts it.
+
+| catalog | group | job | peak RSS | budget |
+|---|---|---|---|---|
+| synthetic corpus, 1 780 files: 44 studies, 130 parts, 18 split off, 61 duplicates | 0.07–0.09 s | – | – | – |
+| 100 000 distinct files: 100 studies of 4 series of 250 slices, rows written straight into the catalog, mode `regroup` | 3.6–3.9 s (three trials) | 5.0–5.1 s | 246 MB | ≤ 20 s, ≤ 500 MB |
+| same, every file listed by a DICOMDIR, after the corrections of ADR 0029 | 3.7–4.0 s (two trials) | 4.8–5.1 s | 283 MB | same |
+| 100 000 files, 400 copies of one series of 250 slices, full scan | 1.4 s | 102.4 s: walk 0.6 s, read 100.0 s | 92 MB | ≤ 150 s, ≤ 500 MB |
+
+The distinct-file row is the regroup's budget case: every file is an
+instance of its own, so every part, check and `cat_instances` row is
+written. The copy tree is the duplicate case: 99 750 losers and one part.
+Its read took 100 s against the 87.6 s of the table above while other tests
+ran beside it, and stays inside the budget. The peak RSS is that of the
+worker child alone (`RUSAGE_CHILDREN`), which in the distinct-file row did
+nothing but the regroup; the same job on a catalog without files peaks at
+56 MB, so the regroup of 100 000 files adds about 190 MB. Run in-process
+twice in a row, the same regroup took 3.4 s and 3.8 s, so a second
+generation, which also matches every part against the previous one, costs
+about as much as the first. `Worker/tests/test_index_budget.py` holds the
+distinct-file budget under `-m slow`, and the full scan's budget with the
+regroup in it.
+
+The DICOMDIR row is the completeness check's worst case (ADR 0029 decision
+16). Matched in SQL, it had made the regroup of 20 000 such files take 45 s
+against 0.7 s without the DICOMDIR, growing with the square of the files;
+matched against a set of SOP UIDs read once, it adds about 0.3 s and 30 MB
+at 100 000. The same job without the DICOMDIR measured 3.6 s and 252 MB that
+day, with the catalog connection's cache spill turned off (ADR 0029
+decision 11), against the 246 MB above.
+
+Reading through pydicom's `Dataset.get` cost about 1.2 s per 10 000 files,
+because it resolves and converts the element again on every call; the reader
+converts every element of the header once instead (`read.Flat`).
 
 ## Viewer scroll rate
 

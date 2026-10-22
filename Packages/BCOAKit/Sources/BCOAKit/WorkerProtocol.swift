@@ -33,7 +33,27 @@ public enum LogLevel: String, Codable, Sendable {
 public enum ArtifactKind: String, Codable, Sendable {
     case nifti, labelmap
     case viewerCache = "viewer_cache"
-    case metrics, export, log, report
+    case metrics, export, log, report, preview
+}
+
+/// Progress as numbers, sent by index jobs (ADR 0020). The app renders its own
+/// localized text from it, so the event's `message` can stay English and
+/// serve the log only.
+public struct ProgressDetail: Codable, Sendable, Equatable {
+    public enum Phase: String, Codable, Sendable, CaseIterable {
+        case walk, read, group, previews
+    }
+
+    public var phase: Phase
+    public var done: Int
+    /// Nil while the total is not known yet, as during the walk.
+    public var total: Int?
+
+    public init(phase: Phase, done: Int, total: Int?) {
+        self.phase = phase
+        self.done = done
+        self.total = total
+    }
 }
 
 public enum DoneStatus: String, Codable, Sendable {
@@ -87,7 +107,11 @@ public enum JSONValue: Codable, Sendable, Equatable {
 
 public enum WorkerEvent: Decodable, Sendable, Equatable {
     case hello(protocolVersion: Int, versions: [String: String])
-    case progress(jobID: String, stage: WorkerStage, model: String?, fraction: Double?, message: String)
+    // `detail` defaults to nil: only index jobs send it, and every other
+    // producer and test of a progress event keeps its shape.
+    case progress(
+        jobID: String, stage: WorkerStage, model: String?, fraction: Double?, message: String,
+        detail: ProgressDetail? = nil)
     case heartbeat(jobID: String, timestamp: String)
     case log(level: LogLevel, message: String)
     case artifact(kind: ArtifactKind, path: String, sha256: String)
@@ -96,7 +120,7 @@ public enum WorkerEvent: Decodable, Sendable, Equatable {
     case done(jobID: String, status: DoneStatus)
 
     private enum Key: String, CodingKey {
-        case type, protocol_version, versions, job_id, stage, model, fraction, message
+        case type, protocol_version, versions, job_id, stage, model, fraction, message, detail
         case ts, level, kind, path, sha256, payload, code, recoverable, status
     }
 
@@ -125,7 +149,8 @@ public enum WorkerEvent: Decodable, Sendable, Equatable {
                 stage: try c.decode(WorkerStage.self, forKey: .stage),
                 model: try c.decodeIfPresent(String.self, forKey: .model),
                 fraction: fraction,
-                message: try c.decode(String.self, forKey: .message))
+                message: try c.decode(String.self, forKey: .message),
+                detail: try c.decodeIfPresent(ProgressDetail.self, forKey: .detail))
         case "heartbeat":
             self = .heartbeat(
                 jobID: try c.decode(String.self, forKey: .job_id),

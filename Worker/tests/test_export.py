@@ -674,3 +674,10 @@ def test_the_protocol_fixture_is_a_valid_export_job() -> None:
     payload = json.loads(fixture.read_text())["payload"]
     assert export_job._STEM.match(payload["stem"])
     assert parse_options(payload["options"]).layout == "wide"
+
+
+def test_the_methods_text_names_the_device_the_results_ran_on(project) -> None:
+    # A run asks for "auto" (ADR 0031); the sentence names what was used.
+    asked_auto = dataclasses.replace(project, run=dataclasses.replace(project.run, device="auto"))
+    text = _export(asked_auto).methods_text
+    assert "(PyTorch mps)" in text and "PyTorch auto" not in text

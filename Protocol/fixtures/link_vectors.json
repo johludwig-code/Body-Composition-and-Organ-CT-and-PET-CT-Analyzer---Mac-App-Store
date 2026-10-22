@@ -1,0 +1,260 @@
+{
+  "description": "Patient links (ADR 0024), computed with Python's hmac. The worker (pytest) and the app's LinkHasher (swift test) must both reproduce every value. All IDs and folder names are synthetic.",
+  "rules": {
+    "link_key": "\"base64:\" + standard base64 (with padding) of the 32 key bytes; the HMAC key is the decoded bytes",
+    "link_key_id": "the first 16 hex characters of HMAC-SHA256(key, UTF-8 \"bcoa.link-key-id\")",
+    "patient_id": "strip spaces and NUL from both ends, then NFC; empty is missing; a case-folded match in placeholder_ids is a placeholder; neither has a link",
+    "pid": "\"pid:\" + hex HMAC-SHA256(key, UTF-8 of \"pid\" U+001F id)",
+    "folder": "\"folder:\" + hex HMAC-SHA256(key, UTF-8 of \"folder\", source_id in decimal and components 1 to level, each NFC, joined by U+001F); level 0 is the source folder itself"
+  },
+  "placeholder_ids": [
+    "ANONYMOUS", "ANONYMIZED", "ANONYMISED", "ANON", "UNKNOWN", "NONE", "NULL", "N/A", "NA", "0",
+    "-"
+  ],
+  "keys": [
+    {
+      "link_key": "base64:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "link_key_id": "3683c115de125163",
+      "pid": [
+        {
+          "patient_id": "00012345",
+          "normalized": "00012345",
+          "state": "present",
+          "link": "pid:94293a7453e2f087f417ae51d0c6918ac900e82313477daf78b7ea1ae46de312"
+        },
+        {
+          "patient_id": "00012345 ",
+          "normalized": "00012345",
+          "state": "present",
+          "link": "pid:94293a7453e2f087f417ae51d0c6918ac900e82313477daf78b7ea1ae46de312"
+        },
+        {
+          "patient_id": "\u000000012345\u0000",
+          "normalized": "00012345",
+          "state": "present",
+          "link": "pid:94293a7453e2f087f417ae51d0c6918ac900e82313477daf78b7ea1ae46de312"
+        },
+        {
+          "patient_id": "1E5",
+          "normalized": "1E5",
+          "state": "present",
+          "link": "pid:2d4bfcddcf5a1bc2bf598338b354324c6ce990a59eebb86b604a54b445ec1d7e"
+        },
+        {
+          "patient_id": "PAT-0001",
+          "normalized": "PAT-0001",
+          "state": "present",
+          "link": "pid:2fe5acfd4dcf85bea674236d76105982b02b0597ec28ae797c612d712501e55b"
+        },
+        {
+          "patient_id": "pat-0001",
+          "normalized": "pat-0001",
+          "state": "present",
+          "link": "pid:3a4b11b3b8fc3c8ad5447e23014e50ba07036dfc7a9c01a45ba997fdb6aa5e5b"
+        },
+        {
+          "patient_id": "A\u0308-0042",
+          "normalized": "\u00c4-0042",
+          "state": "present",
+          "link": "pid:a9eed8c4bf97328e4be8cbc54dc1e22106ede49616bc99f7b156d3e981b2a385"
+        },
+        {
+          "patient_id": "\u00c4-0042",
+          "normalized": "\u00c4-0042",
+          "state": "present",
+          "link": "pid:a9eed8c4bf97328e4be8cbc54dc1e22106ede49616bc99f7b156d3e981b2a385"
+        },
+        {"patient_id": "  ", "normalized": "", "state": "missing", "link": null},
+        {"patient_id": "", "normalized": "", "state": "missing", "link": null},
+        {"patient_id": "ANONYMOUS", "normalized": "ANONYMOUS", "state": "placeholder", "link": null},
+        {
+          "patient_id": "anonymized",
+          "normalized": "anonymized",
+          "state": "placeholder",
+          "link": null
+        },
+        {"patient_id": "N/A", "normalized": "N/A", "state": "placeholder", "link": null},
+        {"patient_id": "0", "normalized": "0", "state": "placeholder", "link": null},
+        {"patient_id": "-", "normalized": "-", "state": "placeholder", "link": null},
+        {
+          "patient_id": "00",
+          "normalized": "00",
+          "state": "present",
+          "link": "pid:4d28d612281f61f07c4d47a7cf89c6c91eb84a523d0655378b8d165075002017"
+        }
+      ],
+      "folder": [
+        {
+          "source_id": 1,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 0,
+          "link": "folder:13f3b71409df216746892b3eb1d6d2ecf053cf6f959b17b9ed686422c3f8770a"
+        },
+        {
+          "source_id": 1,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 1,
+          "link": "folder:46a8ddcad38ba121d48462770bf56443617200465aa8067bc454b2fa912d2b5f"
+        },
+        {
+          "source_id": 1,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 2,
+          "link": "folder:94a1a44e89d443a229b8a269aa66e65641916179792f8b049566d313bf3240a4"
+        },
+        {
+          "source_id": 1,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 3,
+          "link": "folder:4be7c18863d3937ba3df757afa15a39c5792bbbf0bf9a0662dd863eb128ba2de"
+        },
+        {
+          "source_id": 2,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 1,
+          "link": "folder:085fd42ba39754a125bd450f7c8d095456cbb5587b4f1edd04690f92c2f913bd"
+        },
+        {
+          "source_id": 1,
+          "components": ["Gru\u0308n", "CASE_018"],
+          "level": 1,
+          "link": "folder:2eba669908a68ac7197dd514126790abb12773e748c78fe34bdb6319be7a3786"
+        },
+        {
+          "source_id": 1,
+          "components": ["Gr\u00fcn", "CASE_018"],
+          "level": 1,
+          "link": "folder:2eba669908a68ac7197dd514126790abb12773e748c78fe34bdb6319be7a3786"
+        },
+        {
+          "source_id": 1,
+          "components": ["Gr\u00fcn", "CASE_018"],
+          "level": 2,
+          "link": "folder:bb975cb3d5dfbee74cd1efef0226395da5f899c93d5b2b5621b6c5d10cdc1164"
+        }
+      ]
+    },
+    {
+      "link_key": "base64:g03Ied73NOhYXUV7oytVfQipBby3yEv2+TVuNpHdkuU=",
+      "link_key_id": "3e5b692e8b384745",
+      "pid": [
+        {
+          "patient_id": "00012345",
+          "normalized": "00012345",
+          "state": "present",
+          "link": "pid:70950d85c378f7046a15f5a58413171a4b1ad89f6d10a86429cfed7c4f216210"
+        },
+        {
+          "patient_id": "00012345 ",
+          "normalized": "00012345",
+          "state": "present",
+          "link": "pid:70950d85c378f7046a15f5a58413171a4b1ad89f6d10a86429cfed7c4f216210"
+        },
+        {
+          "patient_id": "\u000000012345\u0000",
+          "normalized": "00012345",
+          "state": "present",
+          "link": "pid:70950d85c378f7046a15f5a58413171a4b1ad89f6d10a86429cfed7c4f216210"
+        },
+        {
+          "patient_id": "1E5",
+          "normalized": "1E5",
+          "state": "present",
+          "link": "pid:1d4f60279abc068ea74baba194562c63a5d8dec490b4a4a5df32e4367242cc3f"
+        },
+        {
+          "patient_id": "PAT-0001",
+          "normalized": "PAT-0001",
+          "state": "present",
+          "link": "pid:7e21cef36dbfa5e566cb737fc8fdbdb9f5d53bfd2ed9c570cf24c1333e6b0e71"
+        },
+        {
+          "patient_id": "pat-0001",
+          "normalized": "pat-0001",
+          "state": "present",
+          "link": "pid:3724b418a66644b82b41b9af841c13ff003f502bb9b34be4980f9c05444a0eca"
+        },
+        {
+          "patient_id": "A\u0308-0042",
+          "normalized": "\u00c4-0042",
+          "state": "present",
+          "link": "pid:5c338ffe7951ac97af21c63d4446e8bd3c52410fe17421ebf65b8b2af9180a9f"
+        },
+        {
+          "patient_id": "\u00c4-0042",
+          "normalized": "\u00c4-0042",
+          "state": "present",
+          "link": "pid:5c338ffe7951ac97af21c63d4446e8bd3c52410fe17421ebf65b8b2af9180a9f"
+        },
+        {"patient_id": "  ", "normalized": "", "state": "missing", "link": null},
+        {"patient_id": "", "normalized": "", "state": "missing", "link": null},
+        {"patient_id": "ANONYMOUS", "normalized": "ANONYMOUS", "state": "placeholder", "link": null},
+        {
+          "patient_id": "anonymized",
+          "normalized": "anonymized",
+          "state": "placeholder",
+          "link": null
+        },
+        {"patient_id": "N/A", "normalized": "N/A", "state": "placeholder", "link": null},
+        {"patient_id": "0", "normalized": "0", "state": "placeholder", "link": null},
+        {"patient_id": "-", "normalized": "-", "state": "placeholder", "link": null},
+        {
+          "patient_id": "00",
+          "normalized": "00",
+          "state": "present",
+          "link": "pid:4543bf67ab5f0ffbc3a20dccf075f6e1881a4fdc51ac524573244c7889b53609"
+        }
+      ],
+      "folder": [
+        {
+          "source_id": 1,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 0,
+          "link": "folder:2d968121d02ac231d5df9600b66d295eee0088dd6848f42030c9747fd56b4f6e"
+        },
+        {
+          "source_id": 1,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 1,
+          "link": "folder:b17e6bc63ac148de57796914a7f09504e2ff0255864e80ddf4595986ee37732a"
+        },
+        {
+          "source_id": 1,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 2,
+          "link": "folder:f30813521d01c901e0c5dcd37a3d91f98325cb6c270e9a73ce88e8ba964b3a21"
+        },
+        {
+          "source_id": 1,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 3,
+          "link": "folder:d3a55361868b38ec664959d7d81c6ff412d180757e2c8407e1a022f2e1c62e2c"
+        },
+        {
+          "source_id": 2,
+          "components": ["Cohort A", "CASE_017", "CT", "2019"],
+          "level": 1,
+          "link": "folder:535ac902a35f7488ab71601f984ed7eea2416a6db63c46ae2f4db8c8de2e5cd0"
+        },
+        {
+          "source_id": 1,
+          "components": ["Gru\u0308n", "CASE_018"],
+          "level": 1,
+          "link": "folder:aff3323c17296a0ee9eb33a6510d4736aa132098ab49dafca6894b2213f10f09"
+        },
+        {
+          "source_id": 1,
+          "components": ["Gr\u00fcn", "CASE_018"],
+          "level": 1,
+          "link": "folder:aff3323c17296a0ee9eb33a6510d4736aa132098ab49dafca6894b2213f10f09"
+        },
+        {
+          "source_id": 1,
+          "components": ["Gr\u00fcn", "CASE_018"],
+          "level": 2,
+          "link": "folder:c3bb938d9af7f67d34096161f8012c101460653c0e4955e7066c2378ef68853d"
+        }
+      ]
+    }
+  ]
+}

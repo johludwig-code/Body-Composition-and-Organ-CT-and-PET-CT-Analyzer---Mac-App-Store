@@ -26,7 +26,11 @@ def _write(path: Path, text: str) -> None:
 
 
 @pytest.fixture
-def fake_site(tmp_path: Path) -> Iterator[Path]:
+def fake_site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    # bcoa_worker.index, which other test modules import, blocks `requests`
+    # for the whole process (it keeps pydicom from loading urllib3); the fake
+    # moosez must find the fake requests below instead of the block.
+    monkeypatch.delitem(sys.modules, "requests", raising=False)
     site = tmp_path / "site-packages"
     _write(site / "moosez" / "__init__.py", "from .moosez import moose\n")
     _write(

@@ -6,6 +6,8 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            GeneralPane()
+                .tabItem { Label("General", systemImage: "gearshape") }
             SelfTestPane()
                 .tabItem { Label("Self-Test", systemImage: "stethoscope") }
             DiagnosticsPane()
@@ -13,6 +15,25 @@ struct SettingsView: View {
         }
         .frame(width: 560, height: 420)
         .environment(model)
+    }
+}
+
+/// The reviewer's initials go into the audit log and the QC records (plan
+/// §12); they are the user's own, never a patient's.
+struct GeneralPane: View {
+    @AppStorage("reviewerInitials") private var reviewer = ""
+    @AppStorage("bulkThinCTMaxMM") private var bulkMaxMM = 3.0
+
+    var body: some View {
+        Form {
+            TextField("Reviewer initials", text: $reviewer)
+            Text("Recorded with every selection change and QC decision.")
+                .font(.caption).foregroundStyle(.secondary)
+            Stepper(value: $bulkMaxMM, in: 0.5...10, step: 0.5) {
+                Text("“Select All CT” takes slices up to \(bulkMaxMM.formatted()) mm")
+            }
+        }
+        .padding()
     }
 }
 
@@ -26,7 +47,7 @@ struct SelfTestPane: View {
         Form {
             Toggle("Include a test inference (takes about a minute)", isOn: $withInference)
             Button("Run Self-Test") { model.runSelfTest(inference: withInference) }
-                .disabled(model.project == nil)
+                .disabled(model.session == nil)
             ResultList(kind: .selftest)
         }
         .padding()
@@ -40,10 +61,13 @@ struct DiagnosticsPane: View {
     var body: some View {
         Form {
             Section("Spike S2: worker inherits sandbox and folder access") {
-                if model.sources.isEmpty {
+                let grants = model.session.map { session in
+                    session.sources.compactMap { session.grants[$0.id] }
+                } ?? []
+                if grants.isEmpty {
                     Text("Add a source folder first.").foregroundStyle(.secondary)
                 }
-                ForEach(model.sources) { source in
+                ForEach(grants) { source in
                     Button("Run with “\(source.url.lastPathComponent)”") { model.runSpikeS2(source: source) }
                 }
             }
@@ -58,13 +82,15 @@ private struct ResultList: View {
     let kind: JobKind
 
     var body: some View {
-        ForEach(model.jobs.filter { $0.job.kind == kind }) { job in
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(job.status.rawValue.capitalized) — \(job.message ?? job.errorCode ?? "")")
-                if let payload = model.results[job.id],
-                   let data = try? JSONEncoder.pretty.encode(payload),
-                   let text = String(data: data, encoding: .utf8) {
-                    Text(text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+        if let session = model.session {
+            ForEach(session.jobs.filter { $0.job.kind == kind }) { job in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(JobText.status(job.status)) — \(job.message ?? job.errorCode ?? "")")
+                    if let payload = session.results[job.id],
+                       let data = try? JSONEncoder.pretty.encode(payload),
+                       let text = String(data: data, encoding: .utf8) {
+                        Text(text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                    }
                 }
             }
         }

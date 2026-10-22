@@ -27,6 +27,11 @@ Store allows, so its code is a reference, not a base.
   matters gets a test", warnings in the build output are read.
 - **PET SUV arithmetic** with a per-slice rescale slope (`boa_pet.py` and its
   phantom test) — for phase 2, not copied yet.
+- **The CT kernel lists and the ImageType cases** for M2's automatic
+  selection (ADR 0023; added on 2026-10-08): the soft and sharp lists of
+  `Sources/DicomCore/Select/KernelTable.swift`, verbatim and in their order,
+  and the cases of `Tests/python/test_image_type.py`, which the worker's
+  `test_image_type.py` holds the rule to.
 
 ## Not taken
 
@@ -35,4 +40,7 @@ Store allows, so its code is a reference, not a base.
   DICOM network code (no PACS in v1), and the NIfTI handling in Swift.
 - No source file was copied verbatim. Where a later milestone ports code (PET
   SUV in phase 2), the file names its origin and the Apache-2.0 notice of
-  BOCARTA-MOOSE is carried into THIRD_PARTY_NOTICES.
+  BOCARTA-MOOSE is carried into THIRD_PARTY_NOTICES. The kernel lists of M2
+  count as ported: they are copied as they stand, so the worker's kernel
+  module names `KernelTable.swift` as their origin and the notice goes with
+  them.

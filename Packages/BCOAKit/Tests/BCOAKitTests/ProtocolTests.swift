@@ -37,6 +37,33 @@ private func fixtures(_ folder: String) throws -> [URL] {
     #expect(event == .progress(jobID: "j_1", stage: .segment, model: "clin_ct_organs", fraction: nil, message: "Model 2 of 5"))
 }
 
+@Test func indexProgressCarriesItsDetail() throws {
+    // The walk does not know its total yet; null must decode, not fail the event.
+    let event = try WorkerEvent.parse(
+        line: #"{"type":"progress","job_id":"j_7","stage":"index","fraction":null,"message":"Found 41,200 files","detail":{"phase":"walk","done":41200,"total":null}}"#)
+    #expect(event == .progress(
+        jobID: "j_7", stage: .index, model: nil, fraction: nil, message: "Found 41,200 files",
+        detail: ProgressDetail(phase: .walk, done: 41200, total: nil)))
+}
+
+@Test func previewArtifactDecodes() throws {
+    let hash = String(repeating: "0", count: 64)
+    let event = try WorkerEvent.parse(
+        line: #"{"type":"artifact","kind":"preview","path":"index/previews/\#(hash).png","sha256":"\#(hash)"}"#)
+    #expect(event == .artifact(kind: .preview, path: "index/previews/\(hash).png", sha256: hash))
+}
+
+@Test func indexJobFixturesNameTheirMode() throws {
+    let files = try fixtures("jobs").filter { $0.lastPathComponent.hasPrefix("index_") }
+    #expect(files.count == 3)
+    for file in files {
+        let job = try JSONDecoder().decode(WorkerJob.self, from: Data(contentsOf: file))
+        let mode = file.deletingPathExtension().lastPathComponent.dropFirst("index_".count)
+        #expect(job.kind == .index)
+        #expect(job.payload["mode"] == JSONValue.string(String(mode)))
+    }
+}
+
 @Test func progressWithoutFractionIsRefused() {
     #expect(throws: (any Error).self) {
         try WorkerEvent.parse(line: #"{"type":"progress","job_id":"j","stage":"index","message":""}"#)

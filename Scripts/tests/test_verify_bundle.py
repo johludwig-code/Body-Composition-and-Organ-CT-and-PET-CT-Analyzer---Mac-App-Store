@@ -15,6 +15,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import verify_bundle
 
 
+@pytest.fixture(autouse=True)
+def _portable_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The fake bundle is never signed, so on a Mac, where codesign and nm
+    # exist, every test would fail on the signature checks it does not mean
+    # to test. Hiding both tools gives the same checks as on Linux.
+    which = verify_bundle.shutil.which
+
+    def without_mac_tools(name: str, *args: object, **kwargs: object) -> str | None:
+        return None if name in {"codesign", "nm"} else which(name, *args, **kwargs)
+
+    monkeypatch.setattr(verify_bundle.shutil, "which", without_mac_tools)
+
+
 @pytest.fixture
 def app(tmp_path: Path) -> Path:
     app = tmp_path / "BCOAnalyzer.app"
@@ -151,6 +164,10 @@ def test_the_shipped_entitlements_pass() -> None:
     assert report.failures == []
     helper = plistlib.loads((root / "App/Resources/Helper.entitlements").read_bytes())
     assert set(helper) == verify_bundle.HELPER_ENTITLEMENTS
+    # The ad hoc file adds library validation and nothing else (ADR 0030).
+    adhoc = plistlib.loads((root / "App/Resources/HelperAdHoc.entitlements").read_bytes())
+    assert set(adhoc) == verify_bundle.ADHOC_HELPER_ENTITLEMENTS
+    assert all(value is True for value in adhoc.values())
 
 
 def test_a_validation_prediction_in_the_models_fails(app: Path, tmp_path: Path) -> None:
