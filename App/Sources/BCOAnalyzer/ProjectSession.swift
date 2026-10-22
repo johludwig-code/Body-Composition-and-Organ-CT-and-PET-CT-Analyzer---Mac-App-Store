@@ -30,6 +30,8 @@ final class ProjectSession {
     var runs: [PipelineStore.RunInfo] = []
     var currentRunID: String?
     var progress: [PipelineStore.SeriesProgress] = []
+    /// What the last export wrote, or why it failed.
+    var lastExport: String?
 
     struct Cohort: Identifiable, Hashable {
         let id: Int64
@@ -47,6 +49,8 @@ final class ProjectSession {
     /// Every result a job sent; a segmentation sends one per model.
     @ObservationIgnored var resultLists: [String: [[String: JSONValue]]] = [:]
     @ObservationIgnored private var recordedStatus: [String: JobStatus] = [:]
+    /// Files each job wrote, from its artifact events.
+    @ObservationIgnored var artifacts: [String: [(path: String, sha256: String)]] = [:]
 
     var url: URL { folder.url }
     var catalogURL: URL { url.appendingPathComponent(IndexStore.catalogPath) }
@@ -92,6 +96,10 @@ final class ProjectSession {
         // pipeline can be checked in the real, sandboxed app.
         if let models = UserDefaults.standard.string(forKey: "BCOAAutoAnalyze"), !models.isEmpty {
             startAnalysis(models: models.split(separator: ",").map(String.init), device: "auto")
+        }
+        // `-BCOAAutoExport <name>` exports the newest run with the defaults.
+        if let stem = UserDefaults.standard.string(forKey: "BCOAAutoExport"), !stem.isEmpty, let run = currentRunID {
+            export(run: run, stem: stem, options: [:])
         }
         #endif
         let again = sources.filter { $0.state == "interrupted" || $0.state == "new" || $0.state == "unreachable" }
@@ -305,10 +313,11 @@ final class ProjectSession {
                 Self.log.error("index job failed: \(code, privacy: .public) \(job.message ?? "", privacy: .public)")
                 message = String(localized: "Indexing stopped (\(code)). The next scan continues where it stopped.")
             }
-        } else if job.job.kind == .export, !catalogBusy {
+        } else if job.job.kind == .export {
+            finishExport(job, artifacts: artifacts[job.id] ?? [])
             // ADR 0021 decision 11: a merge an export's read held off is tried
             // again when the export ends.
-            await merge()
+            if !catalogBusy { await merge() }
         }
         reload()
     }
@@ -405,6 +414,8 @@ final class ProjectSession {
         case .result(_, let payload):
             results[jobID] = payload
             resultLists[jobID, default: []].append(payload)
+        case .artifact(_, let path, let sha256):
+            artifacts[jobID, default: []].append((path, sha256))
         case .hello(_, let versions):
             if let run = pipelineJobs[jobID]?.run {
                 write { try PipelineStore.mergeVersions(versions, into: run, in: $0) }

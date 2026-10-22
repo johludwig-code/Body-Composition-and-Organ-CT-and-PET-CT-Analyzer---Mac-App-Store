@@ -56,11 +56,7 @@ struct ContentView: View {
                 case .patients: PatientsView()
                 case .queue: QueueView()
                 case .results: ResultsView()
-                case .export:
-                    ContentUnavailableView(
-                        "Not Built Yet",
-                        systemImage: "hammer",
-                        description: Text("This part follows with the pipeline (docs/PLAN.md §17)."))
+                case .export: ExportView()
                 }
             }
             .environment(session)

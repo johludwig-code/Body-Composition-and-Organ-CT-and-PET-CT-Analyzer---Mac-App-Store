@@ -67,7 +67,7 @@ extension ProjectSession {
     }
 
     private var versions: [String: String] {
-        ["app": AppIdentity.version, "chip": MachineInfo.chip,
+        ["app": AppIdentity.shortVersion, "chip": MachineInfo.chip,
          "memory_gb": String(MachineInfo.memoryGB), "macos": MachineInfo.macOS]
     }
 
