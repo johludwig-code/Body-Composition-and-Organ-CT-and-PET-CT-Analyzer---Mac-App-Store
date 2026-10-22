@@ -79,8 +79,10 @@ def grow(mask: np.ndarray, steps: int) -> np.ndarray:
     for _ in range(steps):
         mask = (
             mask
-            | np.roll(mask, 1, 0) | np.roll(mask, -1, 0)
-            | np.roll(mask, 1, 1) | np.roll(mask, -1, 1)
+            | np.roll(mask, 1, 0)
+            | np.roll(mask, -1, 0)
+            | np.roll(mask, 1, 1)
+            | np.roll(mask, -1, 1)
         )
     return mask
 
@@ -147,7 +149,9 @@ def main(argv: list[str]) -> int:
         scale = int(entry["scale"].rstrip("x"))
         pixels = points * scale
         name = f"icon_{points}x{points}{'@2x' if scale == 2 else ''}.png"
-        master.resize((pixels, pixels), Image.Resampling.LANCZOS).save(ICONSET / name, optimize=True)
+        master.resize((pixels, pixels), Image.Resampling.LANCZOS).save(
+            ICONSET / name, optimize=True
+        )
         entry["filename"] = name
     (ICONSET / "Contents.json").write_text(json.dumps(contents, indent=2) + "\n")
     print(f"[icon] {len(contents['images'])} sizes from {source.name}")
