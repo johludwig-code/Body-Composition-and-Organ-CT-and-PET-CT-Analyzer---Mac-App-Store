@@ -22,7 +22,7 @@ struct BCOAnalyzerApp: App {
                     .keyboardShortcut("o")
                 Button("Add Source Folders…") { model.addSourceFolders() }
                     .keyboardShortcut("a", modifiers: [.command, .shift])
-                    .disabled(model.project == nil)
+                    .disabled(model.session == nil)
             }
         }
 

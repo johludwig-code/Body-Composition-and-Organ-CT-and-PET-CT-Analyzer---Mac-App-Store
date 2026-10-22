@@ -85,6 +85,13 @@ targets:
       - path: App/UITests
     dependencies:
       - target: BCOAnalyzer
+    settings:
+      base:
+        # The runner needs a bundle Info.plist to be signed at all; CI only
+        # ever built the app, so this target had never been built.
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: de.ludwig.bcoanalyzer.uitests
+        TEST_TARGET_NAME: BCOAnalyzer
 
 schemes:
   BCOAnalyzer:

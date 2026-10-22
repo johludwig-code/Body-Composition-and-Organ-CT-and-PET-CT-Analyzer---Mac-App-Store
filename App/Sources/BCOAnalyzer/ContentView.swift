@@ -24,7 +24,7 @@ struct ContentView: View {
                 ResearchFooter()
             }
         }
-        .navigationTitle(model.project?.folder.url.lastPathComponent ?? AppIdentity.displayName)
+        .navigationTitle(model.session?.url.lastPathComponent ?? AppIdentity.displayName)
         .sheet(isPresented: $model.showAbout) { AboutView() }
         .alert(
             "Something went wrong",
@@ -38,7 +38,30 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var detail: some View {
-        if model.project == nil {
+        if let session = model.session {
+            Group {
+                switch model.selection ?? .sources {
+                case .sources: SourcesView()
+                case .patients: PatientsView()
+                case .queue: QueueView()
+                case .results, .export:
+                    ContentUnavailableView(
+                        "Not Built Yet",
+                        systemImage: "hammer",
+                        description: Text("This part follows with the pipeline (docs/PLAN.md §17)."))
+                }
+            }
+            .environment(session)
+            .alert(
+                "Notice",
+                isPresented: Binding(get: { session.message != nil }, set: { if !$0 { session.message = nil } }),
+                presenting: session.message
+            ) { _ in
+                Button("OK") { session.message = nil }
+            } message: { message in
+                Text(message)
+            }
+        } else {
             ContentUnavailableView {
                 Label("No Project Open", systemImage: "folder.badge.plus")
             } description: {
@@ -46,16 +69,6 @@ struct ContentView: View {
             } actions: {
                 Button("Open or Create Project…") { model.chooseProjectFolder() }
                     .buttonStyle(.borderedProminent)
-            }
-        } else {
-            switch model.selection ?? .sources {
-            case .sources: SourcesView()
-            case .queue: QueueView()
-            case .patients, .results, .export:
-                ContentUnavailableView(
-                    "Not Built Yet",
-                    systemImage: "hammer",
-                    description: Text("This part follows after the M0 spikes (docs/PLAN.md §17)."))
             }
         }
     }
@@ -75,54 +88,85 @@ struct ResearchFooter: View {
     }
 }
 
-struct SourcesView: View {
-    @Environment(AppModel.self) private var model
+struct QueueView: View {
+    @Environment(ProjectSession.self) private var session
 
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Source Folders").font(.title2)
+                Text("Queue").font(.title2)
                 Spacer()
-                Button("Add Source Folders…") { model.addSourceFolders() }
+                Button("Retry Failed") { session.retryFailed() }
+                    .disabled(!session.jobs.contains { $0.status == .failed })
             }
-            if model.sources.isEmpty {
-                ContentUnavailableView(
-                    "No Source Folders",
-                    systemImage: "folder",
-                    description: Text("Add folders that contain DICOM. They are only ever read."))
-            } else {
-                List(model.sources) { source in
-                    // The folder name only; full paths often contain patient
-                    // names and are kept out of the interface where possible.
-                    Label(source.url.lastPathComponent, systemImage: "folder")
+            .padding()
+            Table(session.jobs) {
+                TableColumn("Job") { Text(JobText.kind($0.job)) }
+                TableColumn("Status") { Text(JobText.status($0.status)) }
+                TableColumn("Progress") { job in
+                    if let fraction = job.fraction {
+                        ProgressView(value: fraction)
+                    } else if job.status == .running {
+                        ProgressView().controlSize(.small)
+                    }
                 }
+                TableColumn("Message") { Text(JobText.detail($0)) }
+                TableColumn("") { job in
+                    if job.status == .running || job.status == .queued {
+                        Button("Cancel") { session.cancel(job.id) }
+                    }
+                }
+                .width(70)
             }
         }
-        .padding()
     }
 }
 
-struct QueueView: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        Table(model.jobs) {
-            TableColumn("Job") { Text($0.job.kind.rawValue) }
-            TableColumn("Status") { Text($0.status.rawValue.capitalized) }
-            TableColumn("Progress") { job in
-                if let fraction = job.fraction {
-                    ProgressView(value: fraction)
-                } else if job.status == .running {
-                    ProgressView().controlSize(.small)
-                }
+/// Job names, states and progress in the app's own words; the worker's
+/// `message` is English for the log and stands in only where the app has no
+/// text of its own.
+enum JobText {
+    static func kind(_ job: WorkerJob) -> String {
+        switch job.kind {
+        case .index:
+            switch job.payload["mode"]?.stringValue {
+            case "regroup": String(localized: "Regroup index")
+            case "previews": String(localized: "Previews")
+            default: String(localized: "Index source folders")
             }
-            TableColumn("Message") { Text($0.message ?? "") }
-            TableColumn("") { job in
-                if job.status == .running || job.status == .queued {
-                    Button("Cancel") { model.cancel(job.id) }
-                }
-            }
-            .width(70)
+        case .convert: String(localized: "Convert")
+        case .segment: String(localized: "Segment")
+        case .metrics: String(localized: "Metrics")
+        case .viewerCache: String(localized: "Viewer cache")
+        case .export: String(localized: "Export")
+        case .selftest: String(localized: "Self-Test")
+        case .spikeS2: String(localized: "Sandbox check")
         }
+    }
+
+    static func status(_ status: JobStatus) -> String {
+        switch status {
+        case .queued: String(localized: "Queued")
+        case .running: String(localized: "Running")
+        case .done: String(localized: "Done")
+        case .failed: String(localized: "Failed")
+        case .cancelled: String(localized: "Cancelled")
+        case .interrupted: String(localized: "Interrupted")
+        }
+    }
+
+    static func detail(_ job: QueuedJob) -> String {
+        if let detail = job.detail {
+            let done = detail.done.formatted()
+            switch (detail.phase, detail.total) {
+            case (.walk, _): return String(localized: "Looking for files: \(done) found")
+            case (.read, let total?): return String(localized: "Reading files: \(done) of \(total.formatted())")
+            case (.read, nil): return String(localized: "Reading files: \(done)")
+            case (.group, _): return String(localized: "Grouping series")
+            case (.previews, _): return String(localized: "Making previews")
+            }
+        }
+        if let code = job.errorCode { return code }
+        return job.message ?? ""
     }
 }
