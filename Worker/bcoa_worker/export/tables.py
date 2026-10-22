@@ -801,12 +801,17 @@ class _Builder:
         # present tense, so a methods section copied from the export, the plan
         # or the About view cites the same works.
         corrections = _corrections_sentence(exported) if exported else ""
+        # The device the segmentations of the export ran on, from its result
+        # rows: a run asks for "auto", and "PyTorch auto" names no device.
+        used = sorted({self.result_device[key] for key in segmented if key in self.result_device})
+        used = [d for d in used if d and d not in ("auto", "unknown")]
+        device = " and ".join(used) if used else self.data.run.device
         return (
             f"Segmentations were generated with MOOSE v{versions.get('moosez', 'unknown')} "
             "(Shiyam Sundar et al., J Nucl Med 2022; Ferrara et al., Sci Data 2026), "
             "based on nnU-Net (Isensee et al., Nat Methods 2021), using "
             f"{APP_NAME} v{versions.get('app', __version__)} on "
-            f"{chip} (PyTorch {self.data.run.device}). {corrections}{qc}"
+            f"{chip} (PyTorch {device}). {corrections}{qc}"
         )
 
     def provenance_sheet(self, created: str, methods: str) -> Sheet:
