@@ -21,10 +21,12 @@ private func fixture(_ name: String) throws -> WorkerJob {
     let built: [(String, [String: JSONValue])] = [
         ("convert", PipelineJobs.convert(seriesKey: "s_000003", catalogID: String(repeating: "3f", count: 16),
                                          partRef: 15, sources: sources)),
-        ("segment", PipelineJobs.segment(seriesKey: "s_0003", models: ["clin_ct_organs"], device: "auto")),
-        ("metrics", PipelineJobs.metrics(seriesKey: "s_000003", models: ["clin_ct_organs"], device: "mps",
-                                         fallback: false, flags: ["thick_slices"])),
-        ("viewer_cache", PipelineJobs.viewerCache(seriesKey: "s_000003", models: ["clin_ct_organs"])),
+        ("segment", PipelineJobs.segment(seriesKey: "s_0003", run: "R20261002T120000", models: ["clin_ct_organs"],
+                                         device: "auto")),
+        ("metrics", PipelineJobs.metrics(seriesKey: "s_000003", run: "R20261002T120000", models: ["clin_ct_organs"],
+                                         device: "mps", fallback: false, flags: ["thick_slices"])),
+        ("viewer_cache", PipelineJobs.viewerCache(seriesKey: "s_000003", run: "R20261002T120000",
+                                                  models: ["clin_ct_organs"])),
     ]
     for (name, payload) in built {
         let job = try fixture(name)

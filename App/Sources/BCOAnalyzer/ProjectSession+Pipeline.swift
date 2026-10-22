@@ -122,7 +122,7 @@ extension ProjectSession {
             return PipelineJobs.convert(seriesKey: series, catalogID: part.catalogID, partRef: part.partRef,
                                         sources: indexSources())
         case .segment:
-            return PipelineJobs.segment(seriesKey: series, models: models, device: device)
+            return PipelineJobs.segment(seriesKey: series, run: run, models: models, device: device)
         case .metrics:
             let used = try database.read { db in
                 try String.fetchOne(db, sql: """
@@ -130,10 +130,10 @@ extension ProjectSession {
                       AND status = 'done' ORDER BY ended_at DESC LIMIT 1
                     """, arguments: [run, series])
             } ?? device
-            return PipelineJobs.metrics(seriesKey: series, models: models, device: used, fallback: false,
-                                        flags: conversionFlags(series))
+            return PipelineJobs.metrics(seriesKey: series, run: run, models: models, device: used,
+                                        fallback: false, flags: conversionFlags(series))
         case .viewerCache:
-            return PipelineJobs.viewerCache(seriesKey: series, models: models)
+            return PipelineJobs.viewerCache(seriesKey: series, run: run, models: models)
         default:
             return [:]
         }

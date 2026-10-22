@@ -55,7 +55,12 @@ final class ViewerModel {
 
     func load(_ key: String) {
         seriesKey = key
-        let folder = session.url.appendingPathComponent("viewer-cache/\(key)")
+        // The run's own cache (ADR 0031 decision 11), else one written before
+        // caches were kept per run.
+        var folder = session.url.appendingPathComponent(PipelineJobs.viewerCacheFolder(key, run: runID))
+        if !FileManager.default.fileExists(atPath: folder.appendingPathComponent("meta.json").path) {
+            folder = session.url.appendingPathComponent("viewer-cache/\(key)")
+        }
         do {
             let volume = try ViewerVolume(folder: folder)
             self.volume = volume

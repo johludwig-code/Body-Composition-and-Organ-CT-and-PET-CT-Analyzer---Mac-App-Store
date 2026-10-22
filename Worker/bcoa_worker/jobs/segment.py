@@ -30,7 +30,9 @@ def run(job: Job, channel: ProtocolChannel) -> None:
     except moose_adapter.AdapterError as exc:
         raise JobFailure(exc.code, str(exc)) from exc
 
-    labels_dir = job.project_path(f"work/{series_key}/labels")
+    # Per run (ADR 0031 decision 11): a second run of the same series must
+    # not overwrite the labelmaps a locked run's export and viewer show.
+    labels_dir = job.project_path(str(payload.get("labels_dir") or f"work/{series_key}/labels"))
     labels_dir.mkdir(parents=True, exist_ok=True)
     accelerator = moose_adapter.choose_accelerator(requested)
 

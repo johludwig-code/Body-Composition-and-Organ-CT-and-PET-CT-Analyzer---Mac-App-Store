@@ -62,8 +62,19 @@ public enum PipelineJobs {
 
     public static func work(_ seriesKey: String) -> String { "work/\(seriesKey)" }
     public static func ct(_ seriesKey: String) -> String { "work/\(seriesKey)/ct.nii" }
-    public static func labelmap(_ seriesKey: String, model: String) -> String {
-        "work/\(seriesKey)/labels/\(model).nii.gz"
+    /// Labelmaps and viewer caches belong to a run (decision 11 of ADR
+    /// 0031): a second run of a series must not change what a locked run's
+    /// export copies or its viewer shows.
+    public static func labels(_ seriesKey: String, run: String) -> String {
+        "work/\(seriesKey)/runs/\(run)/labels"
+    }
+
+    public static func labelmap(_ seriesKey: String, model: String, run: String) -> String {
+        "\(labels(seriesKey, run: run))/\(model).nii.gz"
+    }
+
+    public static func viewerCacheFolder(_ seriesKey: String, run: String) -> String {
+        "viewer-cache/\(run)/\(seriesKey)"
     }
 
     public static func convert(
@@ -80,10 +91,13 @@ public enum PipelineJobs {
 
     /// `retry_on_cpu` is off: on a Mac the CPU takes hours for a whole CT
     /// and most of its memory (open question 15).
-    public static func segment(seriesKey: String, models: [String], device: String) -> [String: JSONValue] {
+    public static func segment(seriesKey: String, run: String, models: [String], device: String)
+        -> [String: JSONValue]
+    {
         [
             "series_key": .string(seriesKey),
             "input_nifti": .string(ct(seriesKey)),
+            "labels_dir": .string(labels(seriesKey, run: run)),
             "models": .array(models.map { .string($0) }),
             "device": .string(device),
             "retry_on_cpu": .bool(false),
@@ -91,12 +105,12 @@ public enum PipelineJobs {
     }
 
     public static func metrics(
-        seriesKey: String, models: [String], device: String, fallback: Bool, flags: [String]
+        seriesKey: String, run: String, models: [String], device: String, fallback: Bool, flags: [String]
     ) -> [String: JSONValue] {
         [
             "series_key": .string(seriesKey),
             "ct": .string(ct(seriesKey)),
-            "labelmaps": labelmaps(seriesKey, models),
+            "labelmaps": labelmaps(seriesKey, run, models),
             "devices": .object(Dictionary(uniqueKeysWithValues: models.map {
                 ($0, JSONValue.object(["device": .string(device), "fallback": .bool(fallback)]))
             })),
@@ -104,16 +118,19 @@ public enum PipelineJobs {
         ]
     }
 
-    public static func viewerCache(seriesKey: String, models: [String]) -> [String: JSONValue] {
+    public static func viewerCache(seriesKey: String, run: String, models: [String]) -> [String: JSONValue] {
         [
             "series_key": .string(seriesKey),
             "ct": .string(ct(seriesKey)),
-            "labelmaps": labelmaps(seriesKey, models),
+            "labelmaps": labelmaps(seriesKey, run, models),
+            "cache_dir": .string(viewerCacheFolder(seriesKey, run: run)),
         ]
     }
 
-    private static func labelmaps(_ seriesKey: String, _ models: [String]) -> JSONValue {
-        .object(Dictionary(uniqueKeysWithValues: models.map { ($0, .string(labelmap(seriesKey, model: $0))) }))
+    private static func labelmaps(_ seriesKey: String, _ run: String, _ models: [String]) -> JSONValue {
+        .object(Dictionary(uniqueKeysWithValues: models.map {
+            ($0, .string(labelmap(seriesKey, model: $0, run: run)))
+        }))
     }
 }
 

@@ -89,7 +89,11 @@ def run(job: Job, channel: ProtocolChannel) -> None:
         masks = folder / f"{stem}_masks"
         masks.mkdir(exist_ok=True)
         for series_key, model, name in export.masks:
-            source = job.project_path(f"work/{series_key}/labels/{model}.nii.gz")
+            # The run's own labelmap (ADR 0031 decision 11); projects from
+            # before it kept one per series.
+            source = job.project_path(f"work/{series_key}/runs/{run_id}/labels/{model}.nii.gz")
+            if not source.is_file():
+                source = job.project_path(f"work/{series_key}/labels/{model}.nii.gz")
             if not source.is_file():
                 channel.send(Log("warning", f"Mask {name} is missing in the project folder"))
                 continue

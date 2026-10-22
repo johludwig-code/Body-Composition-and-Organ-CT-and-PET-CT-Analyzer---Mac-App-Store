@@ -76,6 +76,15 @@ order of the stages did not.
     `queued` or `running` becomes `interrupted` and its stage is queued
     again from the database (plan §8).
 
+11. **Labelmaps and viewer caches belong to the run.** The segmentation
+    writes to `work/<series_key>/runs/<run_id>/labels/` and the viewer cache
+    to `viewer-cache/<run_id>/<series_key>/`; the converted CT stays one per
+    series. Found when a second run of a series overwrote the labelmaps of a
+    locked run: its export's masks and its viewer would have shown another
+    run's segmentation beside the first run's numbers. The export takes the
+    run's labelmap, and a project from before this keeps working from the
+    old paths.
+
 ## Consequences
 
 - A series that failed shows its stage and error code; "Retry Failed" queues

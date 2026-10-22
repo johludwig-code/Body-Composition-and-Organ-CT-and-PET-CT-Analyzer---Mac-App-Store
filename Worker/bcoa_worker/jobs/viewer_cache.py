@@ -1,7 +1,8 @@
 """The viewer's copy of one series, in canonical LPS (plan §8 stage 5, ADR 0007).
 
 Payload: `series_key`, `ct` and `labelmaps` (model → path), all
-project-relative. Writes `viewer-cache/<series_key>/`: `image.i16` (the CT,
+project-relative, and `cache_dir`, the run's folder for the series
+(`viewer-cache/<run_id>/<series_key>`, ADR 0031 decision 11). Writes there: `image.i16` (the CT,
 little-endian int16), `labels_<model>.u8` or `.u16`, and `meta.json` with the
 grid. The app memory-maps the raw files and never reads NIfTI, so every
 question of orientation is answered here, once: after `DICOMOrient(…, "LPS")`
@@ -48,7 +49,7 @@ def run(job: Job, channel: ProtocolChannel) -> None:
     except (KeyError, TypeError, AttributeError) as exc:
         raise ProtocolError(f"viewer cache payload is incomplete: {exc}") from exc
 
-    folder = job.project_path(f"viewer-cache/{series_key}")
+    folder = job.project_path(str(payload.get("cache_dir") or f"viewer-cache/{series_key}"))
     partial = folder.with_name(f".{series_key}.partial")
     shutil.rmtree(partial, ignore_errors=True)
     partial.mkdir(parents=True)
