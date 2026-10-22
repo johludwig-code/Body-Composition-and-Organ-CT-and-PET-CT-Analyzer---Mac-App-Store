@@ -51,6 +51,26 @@ protobuf compiler. Still in the runtime and candidates for trimming:
 `huggingface_hub` and `hf_xet` (15 MiB together by `du` in the same run, about 16 MB) and `httpx`.
 `requests` and `urllib3` stay, because moosez imports them (ADR 0016).
 
+## On the owner's Mac (M4 Pro)
+
+Apple M4 Pro, 24 GB, macOS 27.0.1, torch 2.14.1; repository, runtime,
+models and projects on an external USB SSD (Samsung T7). Measured with
+`/usr/bin/time -l` around the worker, 22 October 2026, public data only.
+
+| step | input | wall time | peak footprint |
+|---|---|---|---|
+| self-test with the tiny inference, organ model | 64³ phantom | 20.8 s | 6.73 GB |
+| index scan, first | 3 sources, 2 048 files (ACRIN 042, Pancreas-CT 0001, LIDC-IDRI-0001) | under 3 s | 45 MB |
+| index rescan, unchanged | same | walk 0.007 s | |
+| convert (dcm2niix) | ACRIN 042 whole body, 307 files | 1.7 s | |
+| convert (SimpleITK fallback, ADR 0031) | Pancreas-CT 0001, 240 files | 0.8 s | |
+| segment, organ model, MPS | ACRIN 042 whole body, 512×512×312, 3.26 mm | 105 s | 11.75 GB |
+| metrics, 19 labels | same | 1.1 s | 2.86 GB |
+| viewer cache | same | 0.7 s | 0.96 GB |
+
+In the app the three CTs of the ACRIN patient went through all four
+stages in about four minutes, one segmentation at a time.
+
 ## Runtime per model
 
 | model | volume | device | wall time | peak RSS | measured on |
