@@ -18,6 +18,7 @@ from bcoa_worker.export import data as export_data
 from bcoa_worker.export.options import ExportOptionError, parse_options
 from bcoa_worker.export.tables import build
 from bcoa_worker.export.writers import csv_paths, write_csv, write_xlsx
+from bcoa_worker.intended_use import EVERY_PAGE
 from bcoa_worker.moose_adapter import sha256_file
 from bcoa_worker.protocol import Artifact, Job, Log, Progress, Result
 
@@ -82,7 +83,9 @@ def run(job: Job, channel: ProtocolChannel) -> None:
 
     if options.methods_text:
         target = folder / f"{stem}.methods.txt"
-        target.write_text(export.methods_text + "\n", encoding="utf-8")
+        # Every export carries the notice (plan §2 rule 5); the paragraph above
+        # it is the one to paste into a paper, word for word.
+        target.write_text(f"{export.methods_text}\n\n{EVERY_PAGE}\n", encoding="utf-8")
         written.append(target)
 
     if options.masks:

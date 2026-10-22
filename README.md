@@ -10,7 +10,9 @@ folders, choose series, segment them with MOOSE fully offline, review the
 segmentations in a radiological viewer, assign a QC status and export the
 numbers to Excel with one row per patient.
 
-**For research use only. Not for clinical use.**
+**For research use only. Not for clinical use. Not a medical device; not for
+diagnosis or treatment decisions.** What the app says about its intended use,
+whose work it contains and under which licences: [`docs/legal/README.md`](docs/legal/README.md).
 
 ## Status
 

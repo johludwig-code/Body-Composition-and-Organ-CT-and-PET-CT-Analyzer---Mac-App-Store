@@ -681,3 +681,23 @@ def test_the_methods_text_names_the_device_the_results_ran_on(project) -> None:
     asked_auto = dataclasses.replace(project, run=dataclasses.replace(project.run, device="auto"))
     text = _export(asked_auto).methods_text
     assert "(PyTorch mps)" in text and "PyTorch auto" not in text
+
+
+def test_every_export_says_research_only_and_not_a_medical_device(tmp_path: Path) -> None:
+    # Plan §2 rule 5 and §13: the provenance sheet and the methods file both
+    # carry the notice; the paragraph itself stays the one to cite.
+    export_project.create(tmp_path)
+    export_job.run(
+        _job(
+            tmp_path, {"run_id": export_project.RUN, "stem": "cohort", "options": {"format": "csv"}}
+        ),
+        ProtocolChannel(io.StringIO()),
+    )
+    methods = (tmp_path / "exports" / "cohort.methods.txt").read_text(encoding="utf-8")
+    assert methods.rstrip().endswith(
+        "For research use only. Not for clinical use. "
+        "Not a medical device; not for diagnosis or treatment decisions."
+    )
+    provenance = (tmp_path / "exports" / "cohort.provenance.csv").read_text(encoding="utf-8")
+    assert "regulatory_status" in provenance and "Not a medical device" in provenance
+    assert "For research use only. Not for clinical use." in provenance

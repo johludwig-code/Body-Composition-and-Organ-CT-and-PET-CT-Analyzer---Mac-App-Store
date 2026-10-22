@@ -73,13 +73,20 @@ struct ContentView: View {
                 Text(message)
             }
         } else {
+            // The onboarding notice of plan §13: the intended use, shown and
+            // never to be accepted (App Review 2.4.5(vi)).
             ContentUnavailableView {
                 Label("No Project Open", systemImage: "folder.badge.plus")
             } description: {
-                Text("A project is a folder that holds the index, the results and the exports of one study.")
+                VStack(spacing: 10) {
+                    Text("A project is a folder that holds the index, the results and the exports of one study.")
+                    Text(IntendedUse.statement).font(.callout)
+                    Text(IntendedUse.everyPage).font(.callout.weight(.semibold))
+                }
             } actions: {
                 Button("Open or Create Project…") { model.chooseProjectFolder() }
                     .buttonStyle(.borderedProminent)
+                Button("About and Licenses") { model.showAbout = true }
             }
         }
     }
@@ -89,7 +96,7 @@ struct ContentView: View {
 /// only; App Review 2.4.5(vi) forbids making the user accept it.
 struct ResearchFooter: View {
     var body: some View {
-        Text(IntendedUse.short)
+        Text(IntendedUse.everyPage)
             .font(.footnote)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)

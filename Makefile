@@ -76,8 +76,16 @@ sign:
 verify:
 	python3 Scripts/verify_bundle.py "$(APP)"
 
+# The image holds the app, a link to Applications to drag it onto, and the
+# Read Me with the intended use and the licences. The app is cloned, not
+# copied, where the volume is APFS.
 dmg: sign verify
-	hdiutil create -volname "BCO Analyzer" -srcfolder "$(APP)" -ov -format UDZO build/BCOAnalyzer.dmg
+	rm -rf build/dmg && mkdir -p build/dmg
+	cp -cR "$(APP)" build/dmg/ 2>/dev/null || cp -R "$(APP)" build/dmg/
+	ln -s /Applications build/dmg/Applications
+	cp "App/DMG/Read Me.txt" build/dmg/
+	hdiutil create -volname "BCO Analyzer" -srcfolder build/dmg -ov -format UDZO build/BCOAnalyzer.dmg
+	rm -rf build/dmg
 	@echo "Notarise: xcrun notarytool submit build/BCOAnalyzer.dmg --keychain-profile <profile> --wait"
 	@echo "Then:     xcrun stapler staple build/BCOAnalyzer.dmg && spctl -a -vv -t install build/BCOAnalyzer.dmg"
 

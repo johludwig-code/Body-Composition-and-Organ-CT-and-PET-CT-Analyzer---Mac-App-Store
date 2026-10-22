@@ -107,4 +107,10 @@ private func fixtures(_ folder: String) throws -> [URL] {
         .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
         .joined()
     #expect(joined.contains(IntendedUse.statement))
+    #expect(python.contains(IntendedUse.notMedicalDevice))
+}
+
+@Test func theEveryPageLineIsThePlansWording() throws {
+    let plan = try String(contentsOf: projectRoot.appendingPathComponent("docs/PLAN.md"), encoding: .utf8)
+    #expect(plan.contains(IntendedUse.everyPage))
 }

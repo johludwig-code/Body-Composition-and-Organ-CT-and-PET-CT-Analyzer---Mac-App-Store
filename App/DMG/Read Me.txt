@@ -1,0 +1,37 @@
+Body Composition and Organ CT and PET-CT Analyzer (BCO Analyzer)
+
+FOR RESEARCH USE ONLY. NOT FOR CLINICAL USE.
+Not a medical device; not for diagnosis or treatment decisions.
+
+Research software for the automated segmentation and quantification of
+anatomical structures in CT data. Not intended for diagnosis, treatment
+planning, or any other clinical decision-making.
+
+Every segmentation and every number is a research measurement that a
+qualified person must check before it is used. Results do not belong in a
+patient's record. Ethics approval, data protection and the choice of data are
+the responsibility of the study's investigators.
+
+Installing
+  Drag the app onto the Applications folder. Requires a Mac with Apple
+  Silicon, macOS 14 or later, and 16 GB of memory or more.
+  A build that is not notarised by Apple: if macOS says it cannot check the
+  app, open System Settings > Privacy & Security and choose Open Anyway once.
+
+Privacy
+  The app has no network access. Images, results and identifiers stay on
+  this Mac; nothing is uploaded, and no usage data is collected. Keep project
+  folders on a FileVault-encrypted disk.
+
+Licences
+  Segmentations are made with MOOSE (Apache License 2.0); its model weights
+  are licensed under CC BY 4.0 by their authors, and nothing in this app's
+  license restricts the rights that license grants. This app is based on
+  MOOSE and is neither made nor endorsed by its authors. All third-party
+  licences are listed in the app under About and Licenses, and in
+  BCOAnalyzer.app/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md.
+
+  The app is provided as is, without warranty of any kind.
+
+How to cite: see About and Licenses in the app, and the methods text of each
+export.

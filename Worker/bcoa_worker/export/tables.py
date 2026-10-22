@@ -18,7 +18,7 @@ from typing import Literal
 from bcoa_worker import __version__
 from bcoa_worker.export.data import ModelInfo, Patient, ProjectData, QCEntry, Series, Study
 from bcoa_worker.export.options import ExportOptions
-from bcoa_worker.intended_use import SHORT, STATEMENT
+from bcoa_worker.intended_use import NOT_MEDICAL_DEVICE, SHORT, STATEMENT
 from bcoa_worker.moose_adapter import MIRRORED_MODELS
 from bcoa_worker.naming import (
     check_sheet_name,
@@ -823,6 +823,7 @@ class _Builder:
         rows: list[tuple[str, object]] = [
             ("intended_use", SHORT),
             ("intended_use_statement", STATEMENT),
+            ("regulatory_status", NOT_MEDICAL_DEVICE),
             ("application", APP_NAME),
             ("export_created_at", created),
             ("run_id", run.run_id),

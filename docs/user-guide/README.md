@@ -1,11 +1,18 @@
 # User Guide
 
 *Body Composition and Organ CT and PET-CT Analyzer (working title "BCO
-Analyzer"). For research use only. Not for clinical use.*
+Analyzer"). For research use only. Not for clinical use. Not a medical
+device; not for diagnosis or treatment decisions.*
 
 Research software for the automated segmentation and quantification of
 anatomical structures in CT data. Not intended for diagnosis, treatment
 planning, or any other clinical decision-making.
+
+Every segmentation and every number is a research measurement that a
+qualified person must check before it is used. Results do not belong in a
+patient's record. Ethics approval, data protection and the choice of data are
+the responsibility of the study's investigators. The app is provided as is,
+without warranty of any kind.
 
 The app indexes folders of DICOM files, picks one CT per study, segments it
 with MOOSE on the Mac's GPU, lets you check every segmentation in a viewer,

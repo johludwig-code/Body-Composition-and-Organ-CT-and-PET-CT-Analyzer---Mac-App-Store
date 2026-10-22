@@ -9,3 +9,7 @@ PLAN = (WORKER_ROOT.parent / "docs" / "PLAN.md").read_text(encoding="utf-8")
 def test_statement_is_the_plans_wording() -> None:
     assert intended_use.STATEMENT in PLAN
     assert intended_use.SHORT in PLAN
+
+
+def test_the_every_page_line_is_the_plans_wording() -> None:
+    assert intended_use.EVERY_PAGE in PLAN

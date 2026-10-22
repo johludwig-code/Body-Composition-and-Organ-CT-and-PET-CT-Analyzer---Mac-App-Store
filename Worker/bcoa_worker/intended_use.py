@@ -10,3 +10,8 @@ STATEMENT = (
     "anatomical structures in CT data. Not intended for diagnosis, treatment "
     "planning, or any other clinical decision-making."
 )
+
+# Plan §13: the case report's line on every page; the methods file and the
+# provenance sheet carry it too.
+NOT_MEDICAL_DEVICE = "Not a medical device; not for diagnosis or treatment decisions."
+EVERY_PAGE = f"{SHORT} {NOT_MEDICAL_DEVICE}"
