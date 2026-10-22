@@ -37,6 +37,9 @@ struct ContentView: View {
         }
         #endif
         .sheet(isPresented: $model.showAbout) { AboutView() }
+        .sheet(isPresented: $model.showRemoveIdentifiers) {
+            if let session = model.session { RemoveIdentifiersSheet().environment(session) }
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } }),

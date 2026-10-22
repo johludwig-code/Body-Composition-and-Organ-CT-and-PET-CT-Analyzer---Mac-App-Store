@@ -10,6 +10,8 @@ struct PatientsView: View {
     @State private var selection: Set<TreeRow.ID> = []
     @State private var cohortName = ""
     @State private var askingCohortName = false
+    @State private var confirmingIDs = false
+    @State private var editingSettings = false
     @AppStorage("bulkThinCTMaxMM") private var bulkMaxMM = 3.0
 
     var body: some View {
@@ -88,6 +90,11 @@ struct PatientsView: View {
         }
         .toolbar {
             ToolbarItemGroup {
+                if session.unconfirmedPatients > 0 {
+                    Button("Confirm Patient IDs…") { confirmingIDs = true }
+                        .help("Studies without a usable patient ID wait for a folder level to be confirmed.")
+                }
+                Button("Selection Settings…") { editingSettings = true }
                 Button("Apply Auto-Selection to All") { session.apply(.applyAuto(studies: nil)) }
                 Button("Select All CT ≤ \(bulkMaxMM.formatted()) mm") {
                     session.apply(.bulkThinCT(maxMM: bulkMaxMM, studies: nil))
@@ -103,6 +110,8 @@ struct PatientsView: View {
                 }
             }
         }
+        .sheet(isPresented: $confirmingIDs) { ConfirmIDsSheet().environment(session) }
+        .sheet(isPresented: $editingSettings) { SelectionSettingsSheet().environment(session) }
         .alert("Save Selection as Cohort", isPresented: $askingCohortName) {
             TextField("Name", text: $cohortName)
             Button("Save") {

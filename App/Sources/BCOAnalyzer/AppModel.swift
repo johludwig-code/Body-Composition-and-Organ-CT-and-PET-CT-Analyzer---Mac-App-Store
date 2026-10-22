@@ -39,6 +39,7 @@ final class AppModel {
     var session: ProjectSession?
     var lastError: String?
     var showAbout = false
+    var showRemoveIdentifiers = false
 
     init() {
         restoreProject()

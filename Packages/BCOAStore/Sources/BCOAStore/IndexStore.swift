@@ -317,3 +317,125 @@ public enum IndexStore {
         ISO8601DateFormatter().string(from: date)
     }
 }
+
+// MARK: - Identity (ADR 0024)
+
+extension IndexStore {
+    /// One anonymous study and the folder labels the index offers for it,
+    /// by level (0 the source folder, 1–3 the folders below it).
+    public struct FolderCandidates: Sendable, Equatable, Identifiable {
+        public var id: String { studyKey }
+        public var studyKey: String
+        public var pseudonym: String
+        public var studyDate: String?
+        public var levels: [Int: (label: String, link: String)]
+
+        public static func == (a: FolderCandidates, b: FolderCandidates) -> Bool {
+            a.studyKey == b.studyKey && a.levels.mapValues(\.link) == b.levels.mapValues(\.link)
+        }
+    }
+
+    /// The candidates of every study under an unconfirmed patient, read from
+    /// the catalog in one short read (ADR 0024 decision 3). The labels are
+    /// folder names, which can hold patient names; they are shown, never
+    /// written to `project.sqlite`.
+    public static func folderCandidates(project: DatabaseQueue, catalog url: URL) throws -> [FolderCandidates] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return try project.writeWithoutTransaction { db in
+            try attach(url, to: db)
+            defer { try? db.execute(sql: "DETACH DATABASE idx") }
+            var byStudy: [String: FolderCandidates] = [:]
+            var order: [String] = []
+            for row in try Row.fetchAll(db, sql: """
+                SELECT st.study_key, p.pseudonym, st.study_date, k.level, k.label, k.link
+                FROM main.studies AS st
+                JOIN main.patients AS p USING (patient_key)
+                JOIN idx.cat_id_candidates AS k ON k.study_uid = st.study_uid
+                WHERE p.id_status = 'unconfirmed' AND st.index_state = 'current'
+                ORDER BY length(p.pseudonym), p.pseudonym, st.study_date, st.study_key, k.level
+                """) {
+                let key: String = row["study_key"]
+                if byStudy[key] == nil {
+                    order.append(key)
+                    byStudy[key] = FolderCandidates(
+                        studyKey: key, pseudonym: row["pseudonym"], studyDate: row["study_date"], levels: [:])
+                }
+                byStudy[key]?.levels[row["level"]] = (row["label"], row["link"])
+            }
+            return order.compactMap { byStudy[$0] }
+        }
+    }
+
+    /// ADR 0024 decision 3: level 1 when every anonymous study has a level-1
+    /// folder and they name at least two patients, otherwise level 0.
+    public static func defaultFolderLevel(_ candidates: [FolderCandidates]) -> Int {
+        let ones = candidates.compactMap { $0.levels[1]?.link }
+        return ones.count == candidates.count && Set(ones).count >= 2 ? 1 : 0
+    }
+
+    /// "Confirm Patient IDs…": the folder at `level` becomes the patient ID of
+    /// each study that has one there, in one transaction with the automatic
+    /// selection and ages of the studies it touches, and the audit row
+    /// `ids_confirmed` with counts only.
+    public static func confirmFolderIDs(
+        level: Int, candidates: [FolderCandidates], in db: Database, actor: String, now: Date = Date()
+    ) throws {
+        try db.execute(sql: SelectionSQL.inputs)
+        try db.execute(sql: IdentitySQL.inputs)
+        try db.execute(
+            sql: "INSERT INTO temp.id_param (now, actor, keep_identifiers, level) VALUES (?, ?, ?, ?)",
+            arguments: [iso(now), actor, try identifiersRemoved(db) ? 0 : 1, level])
+        for candidate in candidates {
+            guard let chosen = candidate.levels[level] else { continue }
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO temp.id_confirm VALUES (?, ?, ?, 'folder')",
+                arguments: [candidate.studyKey, chosen.link, chosen.label])
+        }
+        try db.execute(sql: IdentitySQL.confirmFolderLevel)
+        try db.execute(sql: SelectionSQL.applyAuto)
+        try db.execute(sql: SelectionSQL.repairPrimary)
+        try db.execute(sql: IndexSQL.patientAges)
+    }
+
+    /// Remove Identifiers, the database's part (ADR 0024 decision 9, steps 2
+    /// and 3): plain IDs, links and the key go for good, unconfirmed patients
+    /// become unlinked, sources lose their names. The caller deletes the
+    /// catalog, previews and job files, and queues a scan without a key.
+    public static func removeIdentifiers(from queue: DatabaseQueue, actor: String, now: Date = Date()) throws {
+        try queue.writeWithoutTransaction { db in
+            // Set before the deletes: the rows must not survive in free pages.
+            try db.execute(sql: "PRAGMA secure_delete = ON")
+            try db.inTransaction(.immediate) {
+                let identifiers = try Int.fetchOne(db, sql: "SELECT count(*) FROM identifiers") ?? 0
+                let links = try Int.fetchOne(db, sql: "SELECT count(*) FROM patient_links") ?? 0
+                try db.execute(sql: "DELETE FROM identifiers")
+                try db.execute(sql: "DELETE FROM patient_links")
+                try db.execute(sql: "DELETE FROM project_meta WHERE key IN ('link_key', 'link_key_id')")
+                try db.execute(sql: "UPDATE patients SET id_status = 'unlinked' WHERE id_status = 'unconfirmed'")
+                try db.execute(sql: "UPDATE sources SET display_path = 'Source ' || id")
+                try setMeta(db, "identifiers_removed_at", iso(now))
+                try audit(db, actor: actor, action: "remove_identifiers", object: "identifiers",
+                          details: ["rows": identifiers, "links": links], now: now)
+                return .commit
+            }
+            // In WAL mode the deleted rows would otherwise live on in the -wal
+            // file (ADR 0021); a no-op in DELETE mode.
+            _ = try? Row.fetchAll(db, sql: "PRAGMA wal_checkpoint(TRUNCATE)")
+        }
+    }
+
+    /// Exports whose audit row says they hold plain patient IDs: what Remove
+    /// Identifiers lists before it starts (ADR 0024 decision 9, step 1).
+    public static func exportsWithIdentifiers(_ db: Database) throws -> [String] {
+        var files: [String] = []
+        for text in try String.fetchAll(db, sql: "SELECT details_json FROM audit_log WHERE action = 'export'") {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+                  let options = object["options"] as? [String: Any],
+                  let identifiers = options["identifiers"] as? String, identifiers != "pseudonym",
+                  let list = object["files"] as? [[String: Any]]
+            else { continue }
+            files += list.compactMap { $0["path"] as? String }
+        }
+        return files
+    }
+}

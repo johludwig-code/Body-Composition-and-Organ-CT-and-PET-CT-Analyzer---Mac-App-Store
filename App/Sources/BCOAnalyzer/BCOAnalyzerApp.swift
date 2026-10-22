@@ -23,6 +23,9 @@ struct BCOAnalyzerApp: App {
                 Button("Add Source Folders…") { model.addSourceFolders() }
                     .keyboardShortcut("a", modifiers: [.command, .shift])
                     .disabled(model.session == nil)
+                Divider()
+                Button("Remove Identifiers…") { model.showRemoveIdentifiers = true }
+                    .disabled(model.session == nil)
             }
         }
 

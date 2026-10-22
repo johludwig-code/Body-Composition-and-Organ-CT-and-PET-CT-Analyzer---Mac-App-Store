@@ -207,3 +207,54 @@ private func sha256(_ url: URL) throws -> String {
     #expect(sources.map(\.state) == ["indexed"])
     #expect(sources.first?.files == 9)
 }
+
+@Test func removeIdentifiersTakesIDsLinksKeyAndNames() throws {
+    let fixture = try Fixture()
+    try fixture.writeCatalog(generation: 1)
+    try IndexStore.mergeIfPending(project: fixture.project, catalog: fixture.catalog)
+    try IndexStore.removeIdentifiers(from: fixture.project, actor: "test")
+    try fixture.project.read { (db: Database) throws in
+        #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM identifiers") == 0)
+        #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM patient_links") == 0)
+        #expect(try IndexStore.linkKey(db) == nil)
+        #expect(try IndexStore.identifiersRemoved(db))
+        #expect(try String.fetchOne(db, sql: "SELECT display_path FROM sources") == "Source 1")
+        #expect(try String.fetchOne(db, sql: "SELECT action FROM audit_log ORDER BY id DESC LIMIT 1")
+            == "remove_identifiers")
+    }
+    // No key is ever made again for this project.
+    #expect(try fixture.project.write { try IndexStore.ensureLinkKey($0) } == nil)
+}
+
+@Test func folderIDsAreConfirmedAtTheChosenLevel() throws {
+    let fixture = try Fixture()
+    try fixture.writeCatalog(generation: 1)
+    // Both studies anonymous, in folders CASE_A and CASE_B below the source.
+    let catalog = try DatabaseQueue(path: fixture.catalog.path)
+    try catalog.write { db in
+        try db.execute(sql: "UPDATE cat_studies SET pid_link = NULL, pid_state = 'placeholder'")
+        try db.execute(sql: "DELETE FROM pending_identifiers")
+        for (uid, folder) in [("2.25.1", "CASE_A"), ("2.25.2", "CASE_B")] {
+            try db.execute(sql: "INSERT INTO cat_id_candidates VALUES (?, 1, 0, 'Source', ?)",
+                           arguments: [uid, "folder:" + String(repeating: "50", count: 32)])
+            try db.execute(sql: "INSERT INTO cat_id_candidates VALUES (?, 1, 1, ?, ?)",
+                           arguments: [uid, folder, "folder:" + String(repeating: folder == "CASE_A" ? "a1" : "b2", count: 32)])
+        }
+    }
+    try IndexStore.mergeIfPending(project: fixture.project, catalog: fixture.catalog)
+    let candidates = try IndexStore.folderCandidates(project: fixture.project, catalog: fixture.catalog)
+    #expect(candidates.count == 2)
+    #expect(candidates.map { $0.levels[1]?.label } == ["CASE_A", "CASE_B"])
+    #expect(IndexStore.defaultFolderLevel(candidates) == 1)
+    let before = try fixture.project.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM series WHERE selected = 1") }
+    #expect(before == 0)
+    try fixture.project.write { try IndexStore.confirmFolderIDs(level: 1, candidates: candidates, in: $0, actor: "test") }
+    try fixture.project.read { (db: Database) throws in
+        #expect(try String.fetchAll(db, sql: "SELECT DISTINCT id_status FROM patients") == ["confirmed"])
+        #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM patients") == 2)
+        // Held until now, the automatic choice applies once the IDs are confirmed.
+        #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM series WHERE selected = 1") == 2)
+        #expect(try String.fetchAll(db, sql: "SELECT patient_id FROM identifiers ORDER BY 1") == ["CASE_A", "CASE_B"])
+    }
+    #expect(try IndexStore.folderCandidates(project: fixture.project, catalog: fixture.catalog).isEmpty)
+}
