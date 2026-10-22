@@ -26,6 +26,14 @@ struct BCOAnalyzerApp: App {
             }
         }
 
+        // One window per series, opened from Results & QC (plan §1: the
+        // viewer opens as a detail view or a window of its own).
+        WindowGroup("Viewer", id: "viewer", for: ViewerRequest.self) { $request in
+            if let request {
+                ViewerWindow(request: request).environment(model)
+            }
+        }
+
         Settings {
             SettingsView()
                 .environment(model)

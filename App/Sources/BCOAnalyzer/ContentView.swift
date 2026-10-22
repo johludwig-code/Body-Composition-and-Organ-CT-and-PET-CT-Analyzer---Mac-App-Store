@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         @Bindable var model = model
@@ -25,6 +26,16 @@ struct ContentView: View {
             }
         }
         .navigationTitle(model.session?.url.lastPathComponent ?? AppIdentity.displayName)
+        #if DEBUG
+        // Development only: `-BCOAOpenViewer <series_key>` opens that series
+        // of the newest run, so the viewer can be checked without clicks.
+        .task {
+            if let key = UserDefaults.standard.string(forKey: "BCOAOpenViewer"),
+               let run = model.session?.currentRunID {
+                openWindow(id: "viewer", value: ViewerRequest(runID: run, seriesKey: key))
+            }
+        }
+        #endif
         .sheet(isPresented: $model.showAbout) { AboutView() }
         .alert(
             "Something went wrong",

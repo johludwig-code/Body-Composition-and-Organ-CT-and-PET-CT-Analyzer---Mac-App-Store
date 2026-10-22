@@ -7,6 +7,7 @@ import SwiftUI
 struct ResultsView: View {
     @Environment(ProjectSession.self) private var session
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     @State private var analyzing = false
     @State private var selection: Set<String> = []
 
@@ -60,7 +61,21 @@ struct ResultsView: View {
                     TableColumn("Flags") { series in
                         FlagsCell(flags: series.flags)
                     }
-                    .width(60)
+                    .width(50)
+                    TableColumn("QC") { series in
+                        Text(series.qcStatus.flatMap(QCStore.Status.init(rawValue:)).map(QCText.status)
+                             ?? QCText.status(.unreviewed))
+                            .foregroundStyle(series.qcStatus == "rejected" ? .red : .secondary)
+                    }
+                    .width(110)
+                }
+                .contextMenu(forSelectionType: String.self) { keys in
+                    Button("Open Viewer") { keys.forEach(open) }
+                        .disabled(keys.contains { key in
+                            session.progress.first { $0.seriesKey == key }?.stages["viewer_cache"]?.status != "done"
+                        })
+                } primaryAction: { keys in
+                    keys.forEach(open)
                 }
             }
             Divider()
@@ -68,6 +83,15 @@ struct ResultsView: View {
                 .padding(.horizontal).padding(.vertical, 6)
         }
         .sheet(isPresented: $analyzing) { AnalyzeSheet().environment(session) }
+    }
+
+    /// Opens the viewer for a series whose cache exists; a double click on
+    /// any other row does nothing.
+    private func open(_ key: String) {
+        guard let run = session.currentRunID,
+              session.progress.first(where: { $0.seriesKey == key })?.stages["viewer_cache"]?.status == "done"
+        else { return }
+        openWindow(id: "viewer", value: ViewerRequest(runID: run, seriesKey: key))
     }
 
     private var summary: String {
