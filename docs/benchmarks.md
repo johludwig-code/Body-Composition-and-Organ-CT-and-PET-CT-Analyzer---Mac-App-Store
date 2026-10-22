@@ -71,6 +71,12 @@ models and projects on an external USB SSD (Samsung T7). Measured with
 In the app the three CTs of the ACRIN patient went through all four
 stages in about four minutes, one segmentation at a time.
 
+**Viewer (plan §9, 30 images/s at 512²):** one axial frame of 512 × 512, the
+gray slice through the window table and the overlay of ten models, takes
+5.4 ms in a release build (`swift test -c release --filter ViewerSpeed`),
+about 185 frames per second; the three planes of the 1×3 layout together
+about 16 ms.
+
 ## Runtime per model
 
 | model | volume | device | wall time | peak RSS | measured on |
