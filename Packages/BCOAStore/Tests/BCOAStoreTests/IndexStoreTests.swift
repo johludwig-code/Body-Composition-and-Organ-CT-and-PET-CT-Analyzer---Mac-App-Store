@@ -190,3 +190,20 @@ private func sha256(_ url: URL) throws -> String {
         #expect(try IndexStore.ensureLinkKey(db) == nil)
     }
 }
+
+@Test func theTreeShowsWhatTheMergeWrote() throws {
+    let fixture = try Fixture()
+    try fixture.writeCatalog(generation: 1)
+    try IndexStore.mergeIfPending(project: fixture.project, catalog: fixture.catalog)
+    let tree = try fixture.project.read { try ProjectTree.load($0) }
+    #expect(tree.patients.map(\.pseudonym) == ["P0001"])
+    let studies = try #require(tree.patients.first?.studies)
+    #expect(studies.map(\.date) == ["2024-01-02", "2025-03-04"])
+    #expect(studies[0].series.map(\.sliceThicknessMM) == [1.0, 5.0])
+    #expect(studies[0].series.map(\.primary) == [true, false])
+    #expect(tree.seriesCount == 3)
+    #expect(tree.selectedCount == 2)
+    let sources = try fixture.project.read { try SourceRow.load($0) }
+    #expect(sources.map(\.state) == ["indexed"])
+    #expect(sources.first?.files == 9)
+}
