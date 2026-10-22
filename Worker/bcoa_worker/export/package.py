@@ -75,6 +75,8 @@ def package_options(options: ExportOptions) -> ExportOptions:
         methods_text=True,
         masks=False,
         reproducibility_package=False,
+        case_reports=False,
+        tables=True,
     )
 
 

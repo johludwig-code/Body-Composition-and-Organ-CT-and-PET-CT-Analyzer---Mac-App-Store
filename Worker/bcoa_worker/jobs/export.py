@@ -63,9 +63,13 @@ def run(job: Job, channel: ProtocolChannel) -> None:
     folder = job.project_path("exports")
     folder.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
+    # Announced as kind "report", which the v1 schema lists (ADR 0017 section 10).
+    reported: list[Path] = []
     channel.send(Progress(job.job_id, "export", 0.5, "Writing files"))
     try:
-        if options.format == "xlsx":
+        if not options.tables:
+            pass
+        elif options.format == "xlsx":
             target = folder / f"{stem}.xlsx"
             partial = folder / f".{stem}.xlsx.partial"
             write_xlsx(export.sheets, partial, created=now.replace(tzinfo=None))
@@ -95,6 +99,22 @@ def run(job: Job, channel: ProtocolChannel) -> None:
         package.write(target, package.contents(project, export, options, created), created)
         written.append(target)
 
+    if options.case_reports:
+        from bcoa_worker.export import report
+
+        channel.send(Progress(job.job_id, "export", 0.8, "Writing case reports"))
+        reports = folder / f"{stem}_reports"
+        reports.mkdir(exist_ok=True)
+        cases = report.cases(project, options, export.methods_text)
+        if not cases:
+            channel.send(Log("warning", "No case to report: no segmented series that QC kept"))
+        for name, content in cases.items():
+            target = reports / f"{name}.report.json"
+            partial = reports / f".{name}.report.json.partial"
+            partial.write_bytes(report.dumps(content))
+            _publish(partial, target)
+            reported.append(target)
+
     if options.masks:
         masks = folder / f"{stem}_masks"
         masks.mkdir(exist_ok=True)
@@ -112,10 +132,11 @@ def run(job: Job, channel: ProtocolChannel) -> None:
             written.append(target)
 
     root = job.project_dir.resolve()
-    for path in written:
-        channel.send(
-            Artifact("export", path.resolve().relative_to(root).as_posix(), sha256_file(path))
-        )
+    for kind, paths in (("export", written), ("report", reported)):
+        for path in paths:
+            channel.send(
+                Artifact(kind, path.resolve().relative_to(root).as_posix(), sha256_file(path))
+            )
     results = export.sheet("results")
     channel.send(
         Result(
@@ -123,6 +144,7 @@ def run(job: Job, channel: ProtocolChannel) -> None:
             {
                 "run_id": run_id,
                 "files": [p.resolve().relative_to(root).as_posix() for p in written],
+                "reports": [p.resolve().relative_to(root).as_posix() for p in reported],
                 "rows": len(results.rows),
                 "columns": len(results.columns),
                 "excluded_series": export.excluded_series,
