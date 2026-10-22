@@ -2,9 +2,12 @@
 # Run on an Apple Silicon Mac with Xcode 16+, xcodegen and uv installed.
 
 SHELL := /bin/bash
-ROOT := $(abspath .)
-PY := $(ROOT)/build/runtime/python/bin/python3
-APP := $(ROOT)/build/Build/Products/Release/BCOAnalyzer.app
+# Relative on purpose: make splits target names at spaces, and with the
+# repository on a volume such as "/Volumes/Ludwig T7" an absolute $(PY) as an
+# order-only prerequisite never existed, so every target rebuilt the runtime
+# and then failed to run it. Every recipe runs in this folder.
+PY := build/runtime/python/bin/python3
+APP := build/Build/Products/Release/BCOAnalyzer.app
 MODELS ?= --clinical
 IDENTITY ?= -
 CONFIG ?= Release
@@ -40,10 +43,10 @@ $(PY):
 	Scripts/build_runtime.sh
 
 models: | $(PY)
-	$(PY) Scripts/fetch_models.py $(MODELS)
+	"$(PY)" Scripts/fetch_models.py $(MODELS)
 
 licenses: | $(PY)
-	$(PY) Scripts/license_report.py --out build/licenses/THIRD_PARTY_NOTICES.md
+	"$(PY)" Scripts/license_report.py --out build/licenses/THIRD_PARTY_NOTICES.md
 
 app:
 	xcodegen generate
