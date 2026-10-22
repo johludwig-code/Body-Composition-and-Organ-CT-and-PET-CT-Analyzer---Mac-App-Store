@@ -16,7 +16,15 @@ from datetime import date
 from typing import Literal
 
 from bcoa_worker import __version__
-from bcoa_worker.export.data import ModelInfo, Patient, ProjectData, QCEntry, Series, Study
+from bcoa_worker.export.data import (
+    ModelInfo,
+    Patient,
+    ProjectData,
+    QCEntry,
+    ResultRow,
+    Series,
+    Study,
+)
 from bcoa_worker.export.options import ExportOptions
 from bcoa_worker.intended_use import NOT_MEDICAL_DEVICE, SHORT, STATEMENT
 from bcoa_worker.moose_adapter import MIRRORED_MODELS
@@ -224,6 +232,8 @@ class _Builder:
             self.results[(r.series_key, r.model)][r.label_id] = r.values
             self.result_flags[(r.series_key, r.model, r.label_id)] = r.flags
             self.result_device.setdefault(r.series_key, r.device)
+        for key in volume_outliers(data.results):
+            self.result_flags[key] = (*self.result_flags[key], "volume_outlier")
         self.failed_jobs: dict[str, str] = {}
         self.runtime: dict[str, float] = defaultdict(float)
         for job in data.jobs:
@@ -885,6 +895,37 @@ def _corrections_sentence(models: set[str]) -> str:
     else:
         changes = f"One correction to MOOSE was applied at run time: {block_edges}."
     return f"{changes} Results can therefore differ from those of MOOSE run on its own. "
+
+
+# Plan §12's volume_outlier: a robust z-score (median and MAD, Iglewicz and
+# Hoaglin) beyond 3.5 per label, from 20 series on; the app's cohort view
+# uses the same rule (CohortStatistics in BCOAKit).
+OUTLIER_Z = 3.5
+OUTLIER_MIN_SERIES = 20
+
+
+def volume_outliers(results: Sequence[ResultRow]) -> set[tuple[str, str, int]]:
+    """The (series, model, label) whose volume is far from the run's others.
+    A label MOOSE did not find is not a volume and takes no part."""
+    from statistics import median
+
+    by_label: dict[tuple[str, int], list[tuple[str, float]]] = defaultdict(list)
+    for r in results:
+        volume = r.values.get("volume_ml")
+        if isinstance(volume, int | float) and r.values.get("voxel_count"):
+            by_label[(r.model, r.label_id)].append((r.series_key, float(volume)))
+    flagged: set[tuple[str, str, int]] = set()
+    for (model, label_id), values in by_label.items():
+        if len(values) < OUTLIER_MIN_SERIES:
+            continue
+        center = median(v for _, v in values)
+        mad = median(abs(v - center) for _, v in values)
+        if mad == 0:
+            continue
+        for series_key, value in values:
+            if abs(0.6745 * (value - center) / mad) > OUTLIER_Z:
+                flagged.add((series_key, model, label_id))
+    return flagged
 
 
 def build(data: ProjectData, options: ExportOptions, *, created: str) -> Export:

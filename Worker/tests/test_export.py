@@ -744,3 +744,24 @@ def test_the_reproducibility_package_holds_no_identifier_and_no_image(tmp_path: 
         assert {n: a.read(n) for n in a.namelist() if n != "export_settings.json"} == {
             n: b.read(n) for n in b.namelist() if n != "export_settings.json"
         }
+
+
+def test_volume_outliers_are_flagged_from_twenty_series_on() -> None:
+    from bcoa_worker.export.tables import volume_outliers
+
+    def row(series: str, volume: float) -> export_data.ResultRow:
+        return export_data.ResultRow(
+            series,
+            "clin_ct_organs",
+            8,
+            "liver",
+            {"volume_ml": volume, "voxel_count": 1000},
+            "mps",
+            (),
+        )
+
+    # Median 1 570 mL, MAD 100: the 120 mL "liver" is z ≈ −9.8, as in the
+    # app's CohortStatistics test.
+    rows = [row(f"s_{n:02d}", 1400.0 + n * 20) for n in range(19)] + [row("s_bad", 120.0)]
+    assert volume_outliers(rows) == {("s_bad", "clin_ct_organs", 8)}
+    assert volume_outliers(rows[:10] + rows[-1:]) == set()
