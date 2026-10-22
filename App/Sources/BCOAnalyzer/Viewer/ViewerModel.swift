@@ -198,8 +198,11 @@ final class ViewerModel {
         }
     }
 
+    /// The catalog's name (ADR 0017 section 4), the same as the report's.
     func name(_ model: String, _ label: Int) -> String {
-        LabelNames.displayName(labelNames[model]?[label] ?? "label_\(label)")
+        let word = labelNames[model]?[label] ?? "label_\(label)"
+        return ProjectSession.structureCatalog?.displayName(model: model, labelID: label, label: word)
+            ?? LabelNames.displayName(word)
     }
 
     func toggle(_ model: String, _ label: Int) {

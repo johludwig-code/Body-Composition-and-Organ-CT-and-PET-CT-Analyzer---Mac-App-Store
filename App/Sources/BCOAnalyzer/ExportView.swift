@@ -19,8 +19,10 @@ struct ExportView: View {
     @AppStorage("export.methodsText") private var methodsText = true
     @AppStorage("export.masks") private var masks = false
     @AppStorage("export.package") private var package = false
+    @AppStorage("export.caseReports") private var caseReports = false
     @State private var stem = ""
     @State private var confirmingIdentifiers = false
+    @State private var confirmingDates = false
 
     var body: some View {
         @Bindable var session = session
@@ -85,6 +87,12 @@ struct ExportView: View {
                 Toggle("Segmentations as NIfTI masks", isOn: $masks)
                 Toggle("Reproducibility package for a publication's supplement", isOn: $package)
                     .help("A ZIP with the run's provenance, the long table, labels, QC, the methods text and the model licences; pseudonyms and days only, no images.")
+                Toggle("Case report per segmented series (PDF)", isOn: $caseReports)
+                    .help("For research documentation: values, QC status, images that show no face, methods and licences. Not a medical report; it does not belong in the patient record.")
+                if caseReports {
+                    Text("Reports name a case by its pseudonym only, whatever the identifier setting, and leave out rejected series.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("File") {
                 TextField("Name", text: $stem, prompt: Text(defaultStem))
@@ -94,7 +102,13 @@ struct ExportView: View {
                         NSWorkspace.shared.activateFileViewerSelecting([session.url.appendingPathComponent("exports")])
                     }
                     Button("Export") {
-                        if identifiers == "pseudonym" { export() } else { confirmingIdentifiers = true }
+                        if identifiers != "pseudonym" {
+                            confirmingIdentifiers = true
+                        } else if caseReports && dates == "iso" {
+                            confirmingDates = true
+                        } else {
+                            export()
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(session.currentRunID == nil || session.isExporting || !validStem)
@@ -102,19 +116,35 @@ struct ExportView: View {
                 if session.isExporting {
                     HStack {
                         ProgressView().controlSize(.small)
-                        Text("Exporting…")
+                        Text(session.isDrawingReports ? "Drawing case reports…" : "Exporting…")
                     }
                 }
                 if let last = session.lastExport {
                     Text(last).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 }
+                if !session.lastReports.isEmpty && !session.isExporting {
+                    HStack {
+                        Text("\(session.lastReports.count) case reports").foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Save a Copy…") { session.saveReportCopies() }
+                        Button("Open in Preview") { session.openReports() }
+                    }
+                }
             }
         }
         .formStyle(.grouped)
         .confirmationDialog("Export patient IDs?", isPresented: $confirmingIdentifiers) {
-            Button("Export with Patient IDs", role: .destructive) { export() }
+            Button("Export with Patient IDs", role: .destructive) {
+                if caseReports && dates == "iso" { confirmingDates = true } else { export() }
+            }
         } message: {
             Text("The file will hold plain patient IDs. Keep it on an encrypted disk, and never send it outside the institution's rules for identifiable data.")
+        }
+        // ADR 0017 section 8: the full date only after a warning.
+        .confirmationDialog("Case reports with full study dates?", isPresented: $confirmingDates) {
+            Button("Export with Full Dates", role: .destructive) { export() }
+        } message: {
+            Text("A study date with a pseudonym can identify a person. Days since the first study are enough for most research; choose full dates only where the data protection rules of the study allow them.")
         }
     }
 
@@ -138,7 +168,7 @@ struct ExportView: View {
             "multiple_studies": .string(multipleStudies), "multiple_series": .string(multipleSeries),
             "qc": .string(qc), "identifiers": .string(identifiers), "dates": .string(dates),
             "methods_text": .bool(methodsText), "masks": .bool(masks),
-            "reproducibility_package": .bool(package),
+            "reproducibility_package": .bool(package), "case_reports": .bool(caseReports),
         ]
         session.export(run: run, stem: name, options: options)
     }
@@ -146,7 +176,7 @@ struct ExportView: View {
 
 extension ProjectSession {
     var isExporting: Bool {
-        jobs.contains { $0.job.kind == .export && !$0.status.isFinished }
+        isDrawingReports || jobs.contains { $0.job.kind == .export && !$0.status.isFinished }
     }
 
     func export(run: String, stem: String, options: [String: JSONValue]) {
@@ -159,9 +189,13 @@ extension ProjectSession {
     /// with its scope, files and their SHA-256 (plan §12).
     func finishExport(_ job: QueuedJob, artifacts: [(path: String, sha256: String)]) {
         guard job.status == .done, let run = job.job.payload["run_id"]?.stringValue else {
+            // The code only: the worker's message may quote a file name.
+            Self.log.error("export failed: \(job.errorCode ?? "unknown", privacy: .public)")
             lastExport = String(localized: "The export failed: \(ErrorText.text(job.errorCode)).")
+            lastReports = []
             return
         }
+        if !artifacts.contains(where: { $0.path.hasSuffix("_case_report.pdf") }) { lastReports = [] }
         let reviewer = self.reviewer
         let options = job.job.payload["options"]
         write { db in

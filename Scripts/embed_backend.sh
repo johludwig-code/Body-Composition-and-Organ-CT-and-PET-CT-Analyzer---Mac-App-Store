@@ -16,6 +16,12 @@ fi
 
 mkdir -p "$DEST"
 rsync -a --delete "$ROOT/build/runtime/python/" "$DEST/python/"
+# The worker of this checkout, not the copy `make worker` last put into the
+# runtime: a stale copy refuses the options a newer app sends as unknown,
+# and the export fails without anything in the app's code being wrong.
+SITE="$DEST/python/lib/python3.12/site-packages"
+rsync -a --delete --exclude __pycache__ "$ROOT/Worker/bcoa_worker/" "$SITE/bcoa_worker/"
+"$DEST/python/bin/python3" -I -m compileall -q --invalidation-mode unchecked-hash "$SITE/bcoa_worker"
 if [[ -d "$ROOT/build/models" ]]; then
   rsync -a --delete "$ROOT/build/models/" "$DEST/models/"
 fi

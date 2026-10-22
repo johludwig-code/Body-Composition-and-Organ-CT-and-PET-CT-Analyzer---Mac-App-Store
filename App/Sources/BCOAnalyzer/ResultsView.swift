@@ -85,6 +85,12 @@ struct ResultsView: View {
                         .disabled(keys.contains { key in
                             session.progress.first { $0.seriesKey == key }?.stages["viewer_cache"]?.status != "done"
                         })
+                    Divider()
+                    Button("Create Case Reports") { reports(for: keys) }
+                        .help("One PDF per segmented series of these patients, in exports/. Research documentation, not a medical report.")
+                        .disabled(session.currentRunID == nil || session.isExporting || !keys.contains { key in
+                            session.progress.first { $0.seriesKey == key }?.stages["metrics"]?.status == "done"
+                        })
                 } primaryAction: { keys in
                     keys.forEach(open)
                 }
@@ -100,6 +106,15 @@ struct ResultsView: View {
         session.progress.filter {
             $0.stages["viewer_cache"]?.status == "done" && ($0.qcStatus == nil || $0.qcStatus == "unreviewed")
         }.map(\.seriesKey)
+    }
+
+    private func reports(for keys: Set<String>) {
+        guard let run = session.currentRunID else { return }
+        let pseudonyms = session.progress.filter { keys.contains($0.seriesKey) }.map(\.pseudonym)
+        // The dates follow the export dialog's choice, but a full date only
+        // ever goes into a report through the dialog and its warning.
+        let chosen = UserDefaults.standard.string(forKey: "export.dates") ?? "days_since_first"
+        session.createCaseReports(run: run, pseudonyms: pseudonyms, dates: chosen == "iso" ? "days_since_first" : chosen)
     }
 
     private func review() {

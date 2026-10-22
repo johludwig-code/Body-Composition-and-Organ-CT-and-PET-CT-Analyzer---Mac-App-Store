@@ -32,6 +32,9 @@ final class ProjectSession {
     var progress: [PipelineStore.SeriesProgress] = []
     /// What the last export wrote, or why it failed.
     var lastExport: String?
+    /// The case reports the last export drew, for "Open" and "Save a Copy…".
+    var lastReports: [URL] = []
+    var reportsInProgress = 0
 
     struct Cohort: Identifiable, Hashable {
         let id: Int64
@@ -103,9 +106,17 @@ final class ProjectSession {
         if let models = UserDefaults.standard.string(forKey: "BCOAAutoAnalyze"), !models.isEmpty {
             startAnalysis(models: models.split(separator: ",").map(String.init), device: "auto")
         }
-        // `-BCOAAutoExport <name>` exports the newest run with the defaults.
+        // `-BCOAAutoExport <name>` exports the newest run with the defaults,
+        // or with `-BCOAAutoExportOptions case_reports=true,tables=false`
+        // (pairs, because a launch argument in braces is read as a plist).
         if let stem = UserDefaults.standard.string(forKey: "BCOAAutoExport"), !stem.isEmpty, let run = currentRunID {
-            export(run: run, stem: stem, options: [:])
+            var options: [String: JSONValue] = [:]
+            for pair in (UserDefaults.standard.string(forKey: "BCOAAutoExportOptions") ?? "").split(separator: ",") {
+                let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { continue }
+                options[parts[0]] = parts[1] == "true" ? .bool(true) : parts[1] == "false" ? .bool(false) : .string(parts[1])
+            }
+            export(run: run, stem: stem, options: options)
         }
         #endif
         let again = sources.filter { $0.state == "interrupted" || $0.state == "new" || $0.state == "unreachable" }
@@ -331,7 +342,8 @@ final class ProjectSession {
                 message = String(localized: "Indexing stopped (\(code)). The next scan continues where it stopped.")
             }
         } else if job.job.kind == .export {
-            finishExport(job, artifacts: artifacts[job.id] ?? [])
+            // The case reports are drawn first, so the audit lists them too.
+            drawReports(for: job, artifacts: artifacts[job.id] ?? [])
             // ADR 0021 decision 11: a merge an export's read held off is tried
             // again when the export ends.
             if !catalogBusy { await merge() }

@@ -453,3 +453,41 @@ func reportsOfARealProject() throws {
         }
     }
 }
+
+@Test func aBatchDrawsEachReportBesideItsContentAndOnlyThere() throws {
+    let project = FileManager.default.temporaryDirectory.appendingPathComponent("bcoa-project-\(UUID().uuidString)")
+    let reports = project.appendingPathComponent("exports/cohort_reports")
+    try FileManager.default.createDirectory(at: reports, withIntermediateDirectories: true)
+    let (folder, counts) = try phantom(boxes())
+    let cache = project.appendingPathComponent("viewer-cache/R20261002T120000")
+    try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+    try FileManager.default.moveItem(at: folder, to: cache.appendingPathComponent("s_000001"))
+    var object = try JSONSerialization.jsonObject(with: Data(contentsOf: try {
+        // The same content the other tests draw, as a file.
+        let url = reports.appendingPathComponent("P0001_t1_s1.report.json")
+        _ = try content(counts) { object in
+            try? JSONSerialization.data(withJSONObject: object).write(to: url)
+        }
+        return url
+    }())) as! [String: Any]
+    object["case"] = "P0002_t1_s1"
+    object["pseudonym"] = "P0002"
+    try JSONSerialization.data(withJSONObject: object).write(to: reports.appendingPathComponent("P0002_t1_s1.report.json"))
+
+    let drawn = CaseReportBatch.draw(
+        project: project,
+        contents: ["exports/cohort_reports/P0001_t1_s1.report.json", "exports/cohort_reports/P0002_t1_s1.report.json",
+                   "exports/../project.sqlite.report.json", "exports/cohort_reports/missing.report.json"],
+        catalog: catalog, renderer: renderer)
+    #expect(drawn[0].pdf == "exports/cohort_reports/P0001_t1_s1_case_report.pdf")
+    #expect(drawn[0].error == nil)
+    #expect(drawn[0].pages > 3)
+    let data = try Data(contentsOf: project.appendingPathComponent(drawn[0].pdf!))
+    #expect(drawn[0].sha256?.count == 64)
+    #expect(!data.isEmpty)
+    #expect(drawn[1].error == nil)
+    // A path out of exports/ and a missing file are errors, not crashes.
+    #expect(drawn[2].pdf == nil && drawn[2].error != nil)
+    #expect(drawn[3].pdf == nil && drawn[3].error != nil)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: reports.path).filter { $0.hasPrefix(".") }.isEmpty)
+}

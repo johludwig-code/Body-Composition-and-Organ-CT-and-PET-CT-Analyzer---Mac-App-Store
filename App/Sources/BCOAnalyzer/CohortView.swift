@@ -32,7 +32,8 @@ struct CohortView: View {
                 .fixedSize()
                 Picker("Structure", selection: $label) {
                     ForEach((models.first { $0.name == model }?.labels ?? [:]).sorted { $0.key < $1.key }, id: \.key) {
-                        Text(LabelNames.displayName($0.value)).tag($0.key)
+                        Text(ProjectSession.structureCatalog?.displayName(model: model, labelID: $0.key, label: $0.value)
+                             ?? LabelNames.displayName($0.value)).tag($0.key)
                     }
                 }
                 .fixedSize()
