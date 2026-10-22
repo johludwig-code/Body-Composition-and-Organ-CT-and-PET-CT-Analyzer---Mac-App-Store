@@ -164,6 +164,10 @@ def test_the_shipped_entitlements_pass() -> None:
     assert report.failures == []
     helper = plistlib.loads((root / "App/Resources/Helper.entitlements").read_bytes())
     assert set(helper) == verify_bundle.HELPER_ENTITLEMENTS
+    # The ad hoc file adds library validation and nothing else (ADR 0030).
+    adhoc = plistlib.loads((root / "App/Resources/HelperAdHoc.entitlements").read_bytes())
+    assert set(adhoc) == verify_bundle.ADHOC_HELPER_ENTITLEMENTS
+    assert all(value is True for value in adhoc.values())
 
 
 def test_a_validation_prediction_in_the_models_fails(app: Path, tmp_path: Path) -> None:

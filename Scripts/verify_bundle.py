@@ -41,6 +41,12 @@ FORBIDDEN_ENTITLEMENTS = {
     "com.apple.security.network.server",
 }
 HELPER_ENTITLEMENTS = {"com.apple.security.app-sandbox", "com.apple.security.inherit"}
+# Ad hoc builds only (ADR 0030): macOS 27 refuses ad hoc signed libraries in
+# an ad hoc signed hardened process, so the interpreter of a local build turns
+# library validation off. A build signed with a real identity never may.
+ADHOC_HELPER_ENTITLEMENTS = HELPER_ENTITLEMENTS | {
+    "com.apple.security.cs.disable-library-validation"
+}
 MACHO_MAGIC = {
     bytes.fromhex("cffaedfe"),
     bytes.fromhex("feedfacf"),
@@ -174,7 +180,10 @@ def check_signatures(app: Path, files: list[Path], report: Report) -> int:
         # sandboxed (ITMS-90296), whether or not the app ever starts it.
         if path.parent != main_dir and macho_filetype(path) == MH_EXECUTE:
             keys = set(entitlements_of(path) or {})
-            if keys != HELPER_ENTITLEMENTS:
+            adhoc = "Signature=adhoc" in flags
+            if keys == ADHOC_HELPER_ENTITLEMENTS and adhoc:
+                report.note(f"ad hoc build: {path.name} runs without library validation (ADR 0030)")
+            elif keys != HELPER_ENTITLEMENTS:
                 report.fail(f"helper {path.name} has entitlements {sorted(keys)}")
     return len(machos)
 
