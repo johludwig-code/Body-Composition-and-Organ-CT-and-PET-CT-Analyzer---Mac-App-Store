@@ -225,8 +225,22 @@ public actor JobQueue {
             }
             while worker.isRunning { try? await Task.sleep(for: .milliseconds(50)) }
             exitStatus = worker.exitStatus
+            if done == nil, let index = jobs.firstIndex(where: { $0.id == job.jobID }),
+               jobs[index].errorCode == nil {
+                // Died without a word: an import error before the protocol
+                // existed, a crash, a kill. The exit status is all there is.
+                let code = "worker_exit_\(exitStatus.map(String.init) ?? "unknown")"
+                await update(index) { $0.errorCode = code }
+            }
         } catch {
             exitStatus = nil
+            // The type only: an error's text can quote a path.
+            if let index = jobs.firstIndex(where: { $0.id == job.jobID }), jobs[index].errorCode == nil {
+                await update(index) {
+                    $0.errorCode = "worker_not_started"
+                    $0.message = String(describing: type(of: error))
+                }
+            }
         }
         // The worker read its file when it started. The file holds absolute
         // source roots and, for an index job, the link key, so it goes now,
