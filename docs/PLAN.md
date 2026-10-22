@@ -195,8 +195,8 @@ Ein Projekt ist ein vom Nutzer gewählter Ordner mit einer SQLite-Datenbank; die
 MeineStudie.aqproj/
   project.sqlite     Index, Auswahl, Läufe, Ergebnisse, QC, Audit-Log
   index/             catalog.sqlite (Dateikatalog, schreibt nur der Worker), catalog.lock, previews/; löschbarer Cache (ADR 0020)
-  work/<serie>/      ct.nii.gz, labels/<modell>.nii.gz, metrics.json
-  viewer-cache/      kanonische LPS-Volumina, LRU mit einstellbarem Größenlimit
+  work/<serie>/      ct.nii, convert.json, runs/<lauf>/labels/<modell>.nii.gz, metrics.json (ADR 0031)
+  viewer-cache/      <lauf>/<serie>/: kanonische LPS-Volumina, LRU mit einstellbarem Größenlimit
   exports/           Excel/CSV, Masken, Reproduzierbarkeits-Pakete
   logs/              Worker-Logs pro Job, ohne Patientendaten
 ```
@@ -299,7 +299,7 @@ flowchart LR
 
 **Stufen**
 
-1. **Konvertierung:** dcm2niix mit festen Flags (Startwerte `-z y -b y -ba y -i y`, im Spike festlegen); Flags und Version gehören zur Pipeline-Version. Die JSON-Sidecar-Datei wird ausgewertet, Warnungen von dcm2niix werden zu QC-Flags.
+1. **Konvertierung:** dcm2niix mit festen Flags (`-z n -b y -ba y -i n -f ct`, ADR 0031: ohne Kompression, weil dcm2niix dafür pigz sucht und der Worker kein weiteres Programm startet; `-i n`, weil eine von Hand gewählte Serie abgeleitet sein darf); Flags und Version gehören zur Pipeline-Version. Der Job kopiert genau die Dateien der Teilserie aus dem Katalog unter neutralen Namen in seinen Scratch-Ordner. Warnungen von dcm2niix werden zu QC-Flags; die von dcm2niix bei Kippung oder ungleichen Abständen korrigierte Version wird gemessen und markiert (OPEN_QUESTIONS #31). Teilt dcm2niix einen Stapel, den der Index als einen erkannt hat, liest SimpleITK ihn in der Reihenfolge des Index (`converter_fallback`).
 2. **Prüfungen:** gleichmäßige Schichtabstände, plausible HU (Luft im Hintergrund nahe −1000 HU, sonst Fehler „Check rescale slope/intercept“), Mindestgröße.
 3. **Segmentierung:** `moose()` je Modell einzeln, für genauen Fortschritt und Fehlerisolation. Gerät: Auto (MPS, sonst CPU); schlägt MPS fehl, optional Wiederholung auf CPU. Das tatsächlich genutzte Gerät wird je Ergebnis gespeichert. Vorab schätzt die App den RAM-Bedarf aus der Voxelanzahl und warnt bei zu wenig Speicher.
 4. **Metriken und Auto-QC:** eigenes Modul (Abschnitt 10) auf dem Originalgitter. Hat die Labelmap eine andere Geometrie als die CT, wird nearest-neighbor resampelt und markiert.
