@@ -255,7 +255,7 @@ def _convert_nifti(job: Job, files: list[tuple[int, bytes, str]], target: Path) 
 def run(job: Job, channel: ProtocolChannel) -> None:
     payload = job.payload
     try:
-        series_key = str(payload["series_key"])
+        series_key = job.series_key()
         catalog = job.project_path(str(payload["catalog"]))
         catalog_id = str(payload["catalog_id"])
         part_ref = int(payload["part_ref"])

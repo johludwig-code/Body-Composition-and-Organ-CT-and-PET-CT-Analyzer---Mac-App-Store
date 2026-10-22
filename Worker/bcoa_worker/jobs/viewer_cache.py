@@ -36,12 +36,9 @@ def is_identity(direction: tuple[float, ...]) -> bool:
 
 
 def run(job: Job, channel: ProtocolChannel) -> None:
-    import numpy as np
-    import SimpleITK as sitk
-
     payload = job.payload
     try:
-        series_key = str(payload["series_key"])
+        series_key = job.series_key()
         ct_path = job.project_path(str(payload["ct"]))
         labelmaps = {
             str(m): job.project_path(str(p)) for m, p in (payload.get("labelmaps") or {}).items()
@@ -50,9 +47,33 @@ def run(job: Job, channel: ProtocolChannel) -> None:
         raise ProtocolError(f"viewer cache payload is incomplete: {exc}") from exc
 
     folder = job.project_path(str(payload.get("cache_dir") or f"viewer-cache/{series_key}"))
+    # The folder is replaced as a whole below, so it must be this series'
+    # own, inside viewer-cache/, and never viewer-cache/ itself.
+    caches = job.project_path("viewer-cache")
+    if folder.name != series_key or caches not in folder.parents:
+        raise ProtocolError("cache_dir is not a viewer cache folder of this series")
     partial = folder.with_name(f".{series_key}.partial")
     shutil.rmtree(partial, ignore_errors=True)
     partial.mkdir(parents=True)
+    try:
+        _write(job, channel, series_key, ct_path, labelmaps, folder, partial)
+    except BaseException:
+        # A failed or cancelled job leaves no half cache behind.
+        shutil.rmtree(partial, ignore_errors=True)
+        raise
+
+
+def _write(
+    job: Job,
+    channel: ProtocolChannel,
+    series_key: str,
+    ct_path: Any,
+    labelmaps: dict[str, Any],
+    folder: Any,
+    partial: Any,
+) -> None:
+    import numpy as np
+    import SimpleITK as sitk
 
     channel.send(Progress(job.job_id, "viewer_cache", 0.0, "Reorienting the CT"))
     ct = sitk.ReadImage(str(ct_path))

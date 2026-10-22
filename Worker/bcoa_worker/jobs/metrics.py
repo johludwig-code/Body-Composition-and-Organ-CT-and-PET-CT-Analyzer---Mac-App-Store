@@ -57,7 +57,7 @@ def run(job: Job, channel: ProtocolChannel) -> None:
 
     payload = job.payload
     try:
-        series_key = str(payload["series_key"])
+        series_key = job.series_key()
         ct_path = job.project_path(str(payload["ct"]))
         labelmaps = {str(m): job.project_path(str(p)) for m, p in payload["labelmaps"].items()}
     except (KeyError, TypeError, AttributeError) as exc:

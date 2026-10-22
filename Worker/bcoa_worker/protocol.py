@@ -8,6 +8,7 @@ the Swift `WorkerEvent` decoder.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,6 +32,9 @@ ProgressPhase = Literal["walk", "read", "group", "previews"]
 STAGES: frozenset[str] = frozenset(Stage.__args__)  # type: ignore[attr-defined]
 JOB_KINDS: frozenset[str] = frozenset(JobKind.__args__)  # type: ignore[attr-defined]
 PROGRESS_PHASES: frozenset[str] = frozenset(ProgressPhase.__args__)  # type: ignore[attr-defined]
+
+
+SERIES_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 
 
 class ProtocolError(ValueError):
@@ -190,6 +194,17 @@ class Job:
     payload: dict[str, Any] = field(default_factory=dict)
     heartbeat_seconds: float = 10.0
     protocol_version: int = PROTOCOL_VERSION
+
+    def series_key(self) -> str:
+        """The payload's series key, which becomes a folder name in `work/`
+        and `viewer-cache/`. Only the shape the index gives keys (`s_000002`;
+        the tests' `se1`): a key such as `.` would name the parent folder,
+        and the viewer cache would replace all of `viewer-cache/` with one
+        series."""
+        value = self.payload.get("series_key")
+        if not isinstance(value, str) or not SERIES_KEY.fullmatch(value):
+            raise ProtocolError("series_key is missing or not a series key")
+        return value
 
     def project_path(self, relative: str) -> Path:
         """Resolve a project-relative path from the payload, refusing anything
