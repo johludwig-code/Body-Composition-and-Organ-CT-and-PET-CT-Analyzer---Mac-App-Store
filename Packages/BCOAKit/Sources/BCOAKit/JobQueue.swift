@@ -193,12 +193,21 @@ public actor JobQueue {
     }
 
     private func schedule() async {
+        // Every job chosen is marked running before the first await: the
+        // actor is re-entrant at each await, and a second schedule() that ran
+        // in between saw the rest still queued and started them as well, so
+        // one job ran in two workers that shared its scratch folder.
+        var started: [Int] = []
         for id in QueuePolicy.jobsToStart(jobs, paused: paused) {
-            guard let index = jobs.firstIndex(where: { $0.id == id }) else { continue }
-            await update(index) {
-                $0.status = .running
-                $0.lastHeartbeat = .now
+            guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].status == .queued else {
+                continue
             }
+            jobs[index].status = .running
+            jobs[index].lastHeartbeat = .now
+            started.append(index)
+        }
+        for index in started {
+            await onChange(jobs[index])
             let job = jobs[index].job
             Task { await self.run(job) }
         }

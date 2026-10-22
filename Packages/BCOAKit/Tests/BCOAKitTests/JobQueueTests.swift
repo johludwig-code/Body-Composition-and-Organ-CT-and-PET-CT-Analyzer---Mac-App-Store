@@ -167,3 +167,48 @@ private final class TimelineLauncher: WorkerLauncher, @unchecked Sendable {
     let events = await timeline.events
     #expect(events == ["launch j_one", "finalize j_one failed", "launch j_two", "finalize j_two failed"])
 }
+
+/// Counts launches per job and lets each worker "run" until told to stop.
+private final class CountingLauncher: WorkerLauncher, @unchecked Sendable {
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+
+    var launches: [String: Int] { lock.withLock { counts } }
+
+    func launch(_ job: WorkerJob, jobFile: URL) throws -> WorkerProcess {
+        lock.withLock { counts[job.jobID, default: 0] += 1 }
+        // A real process that ends at once without a word: the job fails,
+        // which is all this test needs.
+        let worker = WorkerProcess(
+            jobID: job.jobID, executable: URL(fileURLWithPath: "/usr/bin/true"), arguments: [],
+            environment: [:])
+        try worker.start()
+        return worker
+    }
+}
+
+@Test func noJobIsStartedTwiceWhenJobsAreQueuedAtOnce() async throws {
+    // onChange suspends the queue at every update; two enqueues racing used
+    // to start the same light job twice.
+    let project = temporaryProject()
+    defer { try? FileManager.default.removeItem(at: project) }
+    let launcher = CountingLauncher()
+    let queue = JobQueue(
+        launcher: launcher, supervisor: WorkerSupervisor(),
+        onChange: { _ in try? await Task.sleep(for: .milliseconds(5)) })
+    await withTaskGroup(of: Void.self) { group in
+        for n in 0..<8 {
+            group.addTask {
+                await queue.enqueue(WorkerJob(
+                    jobID: "j_light_\(n)", kind: .convert, projectDir: project, resourcesDir: project))
+            }
+        }
+    }
+    for _ in 0..<500 {
+        if await queue.jobs.allSatisfy(\.status.isFinished) { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(await queue.jobs.allSatisfy(\.status.isFinished))
+    #expect(launcher.launches.count == 8)
+    #expect(launcher.launches.values.allSatisfy { $0 == 1 }, "\(launcher.launches)")
+}
