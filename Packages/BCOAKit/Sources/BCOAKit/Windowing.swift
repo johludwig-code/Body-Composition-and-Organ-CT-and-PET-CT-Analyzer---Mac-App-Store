@@ -47,6 +47,23 @@ public enum Windowing {
     }
 }
 
+extension LabelNames {
+    /// The export's spelling of a MOOSE word, as `bcoa_worker.naming.sanitize`
+    /// writes it: lower case a–z, 0–9 and underscore, anything else one
+    /// underscore (`vertebra_L3` → `vertebra_l3`). The case report compares
+    /// the catalog's MOOSE words with the content file's in this form.
+    public static func sanitized(_ name: String) -> String {
+        var out = ""
+        for scalar in name.trimmingCharacters(in: .whitespaces).lowercased().unicodeScalars {
+            let allowed = ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar) || scalar == "_"
+            let character = allowed ? Character(scalar) : "_"
+            if character == "_" && out.last == "_" { continue }
+            out.append(character)
+        }
+        return out.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+    }
+}
+
 /// `kidney_left` → "Kidney left"; must agree with
 /// `bcoa_worker.naming.display_name`, and both are tested on the same names.
 public enum LabelNames {

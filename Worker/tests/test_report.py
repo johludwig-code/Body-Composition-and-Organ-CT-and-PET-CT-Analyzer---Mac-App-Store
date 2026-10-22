@@ -117,7 +117,7 @@ def test_notes_in_plain_words(project) -> None:
 
 
 def test_an_accessory_structure_is_named_as_one() -> None:
-    assert report._note("vertebra_L6", ("empty_label",), False, None) == report.ACCESSORY_NOTE
+    assert report._note("vertebra_l6", ("empty_label",), False, None) == report.ACCESSORY_NOTE
     assert report._note("rib_left_13", ("empty_label",), False, None) == report.ACCESSORY_NOTE
     assert report._note("rib_left_12", ("empty_label",), False, None) == "not found in this CT"
 

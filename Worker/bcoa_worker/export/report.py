@@ -34,7 +34,8 @@ NOTES = {
     "labelmap_resampled": "segmentation resampled to the CT grid",
 }
 # Structures that only some people have: their absence is anatomy, not a miss.
-ACCESSORY = re.compile(r"vertebra_L6|rib_(left|right)_13")
+# In the export's spelling of the MOOSE words (`vertebra_L6` → `vertebra_l6`).
+ACCESSORY = re.compile(r"vertebra_l6|rib_(left|right)_13")
 ACCESSORY_NOTE = "not found, an accessory structure that only some people have"
 CASE = re.compile(r"^P\d{4,}_t\d+_s\d+$")
 

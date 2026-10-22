@@ -135,6 +135,71 @@ public final class ViewerVolume: Sendable {
         }
         return counts
     }
+
+    /// Count, centroid and bounding box per label of one model, in one pass:
+    /// the case report checks its voxel counts against the export, its sides
+    /// against the midline and its cut levels against the face from these.
+    public func labelStatistics(_ model: String) -> [Int: LabelStatistics] {
+        guard let entry = labels[model] else { return [:] }
+        let g = geometry
+        var stats: [Int: LabelStatistics] = [:]
+        func visit<T: FixedWidthInteger>(_ voxels: UnsafeBufferPointer<T>) {
+            // Accumulated per label id in flat arrays: a dictionary lookup per
+            // voxel would make this pass many times slower.
+            let capacity = Int(voxels.max() ?? 0) + 1
+            var count = [Int](repeating: 0, count: capacity)
+            var sumI = [Double](repeating: 0, count: capacity)
+            var sumJ = [Double](repeating: 0, count: capacity)
+            var sumK = [Double](repeating: 0, count: capacity)
+            var low = [VolumeIndex](repeating: VolumeIndex(i: .max, j: .max, k: .max), count: capacity)
+            var high = [VolumeIndex](repeating: VolumeIndex(i: .min, j: .min, k: .min), count: capacity)
+            var index = 0
+            for k in 0..<g.nz {
+                for j in 0..<g.ny {
+                    for i in 0..<g.nx {
+                        let value = Int(voxels[index])
+                        index += 1
+                        guard value != 0 else { continue }
+                        count[value] += 1
+                        sumI[value] += Double(i)
+                        sumJ[value] += Double(j)
+                        sumK[value] += Double(k)
+                        if i < low[value].i { low[value].i = i }
+                        if j < low[value].j { low[value].j = j }
+                        if k < low[value].k { low[value].k = k }
+                        if i > high[value].i { high[value].i = i }
+                        if j > high[value].j { high[value].j = j }
+                        if k > high[value].k { high[value].k = k }
+                    }
+                }
+            }
+            for value in 1..<max(capacity, 1) where count[value] > 0 {
+                let n = Double(count[value])
+                stats[value] = LabelStatistics(
+                    count: count[value], centroid: (sumI[value] / n, sumJ[value] / n, sumK[value] / n),
+                    low: low[value], high: high[value])
+            }
+        }
+        entry.data.withUnsafeBytes { raw in
+            if entry.wide { visit(raw.bindMemory(to: UInt16.self)) } else { visit(raw.bindMemory(to: UInt8.self)) }
+        }
+        return stats
+    }
+}
+
+/// Where one label lies in the volume, in voxel indices of the LPS cache.
+public struct LabelStatistics: Sendable {
+    public var count: Int
+    public var centroid: (i: Double, j: Double, k: Double)
+    public var low: VolumeIndex
+    public var high: VolumeIndex
+
+    public init(count: Int, centroid: (i: Double, j: Double, k: Double), low: VolumeIndex, high: VolumeIndex) {
+        self.count = count
+        self.centroid = centroid
+        self.low = low
+        self.high = high
+    }
 }
 
 /// A window as a table from every Int16 value to its gray level.
