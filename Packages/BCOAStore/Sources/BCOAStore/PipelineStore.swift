@@ -355,3 +355,40 @@ public enum PipelineStore {
         return formatter.string(from: date)
     }
 }
+
+// MARK: - Cohort overview (plan §12)
+
+extension PipelineStore {
+    /// The metrics a cohort table may show; a column name that is not one of
+    /// these never reaches the SQL.
+    public static let metricColumns = [
+        "volume_ml", "hu_mean", "hu_sd", "hu_median", "hu_p05", "hu_p95", "hu_min", "hu_max", "voxel_count",
+    ]
+
+    public struct CohortValue: Sendable, Equatable, Identifiable {
+        public var id: String { seriesKey }
+        public var seriesKey: String
+        public var pseudonym: String
+        public var studyDate: String?
+        public var description: String?
+        public var value: Double?
+    }
+
+    /// One structure's metric over every series of the run that has it.
+    public static func cohort(
+        runID: String, model: String, labelID: Int, metric: String, in db: Database
+    ) throws -> [CohortValue] {
+        guard metricColumns.contains(metric) else { return [] }
+        return try Row.fetchAll(db, sql: """
+            SELECT r.series_key, p.pseudonym, st.study_date, s.description, r.\(metric) AS value
+            FROM results AS r
+            JOIN series AS s USING (series_key) JOIN studies AS st USING (study_key)
+            JOIN patients AS p USING (patient_key)
+            WHERE r.run_id = ? AND r.model = ? AND r.label_id = ?
+            ORDER BY length(p.pseudonym), p.pseudonym, st.study_date, r.series_key
+            """, arguments: [runID, model, labelID]).map {
+            CohortValue(seriesKey: $0["series_key"], pseudonym: $0["pseudonym"], studyDate: $0["study_date"],
+                        description: $0["description"], value: $0["value"])
+        }
+    }
+}

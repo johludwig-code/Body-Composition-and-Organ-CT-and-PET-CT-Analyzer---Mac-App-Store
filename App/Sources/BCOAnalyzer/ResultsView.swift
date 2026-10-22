@@ -10,6 +10,7 @@ struct ResultsView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var analyzing = false
     @State private var selection: Set<String> = []
+    @State private var mode = "series"
 
     var body: some View {
         @Bindable var session = session
@@ -25,6 +26,11 @@ struct ResultsView: View {
                     .fixedSize()
                     .onChange(of: session.currentRunID) { session.reload() }
                 }
+                Picker("View", selection: $mode) {
+                    Text("Series").tag("series")
+                    Text("Cohort").tag("cohort")
+                }
+                .pickerStyle(.segmented).fixedSize()
                 Spacer()
                 Button("Retry Failed") { session.retryFailedStages() }
                     .disabled(!session.progress.contains { $0.hasFailure })
@@ -38,7 +44,9 @@ struct ResultsView: View {
                       systemImage: "exclamationmark.triangle")
                     .padding(.horizontal)
             }
-            if session.progress.isEmpty {
+            if mode == "cohort", !session.progress.isEmpty {
+                CohortView()
+            } else if session.progress.isEmpty {
                 ContentUnavailableView(
                     "No Results Yet",
                     systemImage: "checkmark.seal",
