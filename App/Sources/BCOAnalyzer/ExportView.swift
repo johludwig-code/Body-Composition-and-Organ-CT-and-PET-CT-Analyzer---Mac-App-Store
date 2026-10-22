@@ -18,6 +18,7 @@ struct ExportView: View {
     @AppStorage("export.dates") private var dates = "days_since_first"
     @AppStorage("export.methodsText") private var methodsText = true
     @AppStorage("export.masks") private var masks = false
+    @AppStorage("export.package") private var package = false
     @State private var stem = ""
     @State private var confirmingIdentifiers = false
 
@@ -82,6 +83,8 @@ struct ExportView: View {
                 }
                 Toggle("Methods text with references", isOn: $methodsText)
                 Toggle("Segmentations as NIfTI masks", isOn: $masks)
+                Toggle("Reproducibility package for a publication's supplement", isOn: $package)
+                    .help("A ZIP with the run's provenance, the long table, labels, QC, the methods text and the model licences; pseudonyms and days only, no images.")
             }
             Section("File") {
                 TextField("Name", text: $stem, prompt: Text(defaultStem))
@@ -135,6 +138,7 @@ struct ExportView: View {
             "multiple_studies": .string(multipleStudies), "multiple_series": .string(multipleSeries),
             "qc": .string(qc), "identifiers": .string(identifiers), "dates": .string(dates),
             "methods_text": .bool(methodsText), "masks": .bool(masks),
+            "reproducibility_package": .bool(package),
         ]
         session.export(run: run, stem: name, options: options)
     }

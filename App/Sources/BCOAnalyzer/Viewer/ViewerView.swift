@@ -6,6 +6,8 @@ import SwiftUI
 struct ViewerRequest: Codable, Hashable {
     var runID: String
     var seriesKey: String
+    /// QC mode: the unreviewed series one after another (plan §12).
+    var reviewQueue = false
 }
 
 /// The viewer window (plan §9): planes in radiological convention, the label
@@ -29,7 +31,8 @@ struct ViewerWindow: View {
         .frame(minWidth: 1000, minHeight: 640)
         .task {
             if model == nil, let session = app.session {
-                model = ViewerModel(session: session, runID: request.runID, seriesKey: request.seriesKey)
+                model = ViewerModel(session: session, runID: request.runID, seriesKey: request.seriesKey,
+                                    reviewQueue: request.reviewQueue)
             }
         }
     }
@@ -240,6 +243,9 @@ struct ViewerView: View {
                     commentFocused = false
                 }
             Spacer()
+            if model.reviewQueue {
+                Text("QC mode: \(model.remaining) unreviewed after this one").foregroundStyle(.secondary)
+            }
             Button("Previous (P)") { model.step(-1) }
             Button("Next (N)") { model.step(1) }
         }

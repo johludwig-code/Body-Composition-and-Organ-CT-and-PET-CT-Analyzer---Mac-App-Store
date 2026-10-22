@@ -32,6 +32,9 @@ struct ResultsView: View {
                 }
                 .pickerStyle(.segmented).fixedSize()
                 Spacer()
+                Button("Review Unreviewed (\(unreviewed.count))") { review() }
+                    .disabled(unreviewed.isEmpty)
+                    .help("Opens the viewer on each series without a QC decision, one after another.")
                 Button("Retry Failed") { session.retryFailedStages() }
                     .disabled(!session.progress.contains { $0.hasFailure })
                 Button("Analyze…") { analyzing = true }
@@ -91,6 +94,17 @@ struct ResultsView: View {
                 .padding(.horizontal).padding(.vertical, 6)
         }
         .sheet(isPresented: $analyzing) { AnalyzeSheet().environment(session) }
+    }
+
+    private var unreviewed: [String] {
+        session.progress.filter {
+            $0.stages["viewer_cache"]?.status == "done" && ($0.qcStatus == nil || $0.qcStatus == "unreviewed")
+        }.map(\.seriesKey)
+    }
+
+    private func review() {
+        guard let run = session.currentRunID, let first = unreviewed.first else { return }
+        openWindow(id: "viewer", value: ViewerRequest(runID: run, seriesKey: first, reviewQueue: true))
     }
 
     /// Opens the viewer for a series whose cache exists; a double click on

@@ -108,7 +108,4 @@ def parse_options(raw: Mapping[str, Any]) -> ExportOptions:
         masks=bool(raw.get("masks", False)),
         reproducibility_package=bool(raw.get("reproducibility_package", False)),
     )
-    if options.reproducibility_package:
-        # ADR 0013: refused until M6 builds it, never silently left out.
-        raise ExportOptionError("the reproducibility package is not built yet (milestone M6)")
     return options

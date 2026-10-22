@@ -88,6 +88,13 @@ def run(job: Job, channel: ProtocolChannel) -> None:
         target.write_text(f"{export.methods_text}\n\n{EVERY_PAGE}\n", encoding="utf-8")
         written.append(target)
 
+    if options.reproducibility_package:
+        from bcoa_worker.export import package
+
+        target = folder / f"{stem}_reproducibility.zip"
+        package.write(target, package.contents(project, export, options, created), created)
+        written.append(target)
+
     if options.masks:
         masks = folder / f"{stem}_masks"
         masks.mkdir(exist_ok=True)

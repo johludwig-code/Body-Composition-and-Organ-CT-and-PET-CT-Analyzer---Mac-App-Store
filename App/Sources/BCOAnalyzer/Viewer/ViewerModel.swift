@@ -43,12 +43,28 @@ final class ViewerModel {
     private(set) var qc = QCStore.SeriesQC.unreviewed
     var comment = ""
 
-    init(session: ProjectSession, runID: String, seriesKey: String) {
+    /// QC mode (plan §12): N and P go through the unreviewed series only,
+    /// and a decision moves on to the next one.
+    let reviewQueue: Bool
+
+    init(session: ProjectSession, runID: String, seriesKey: String, reviewQueue: Bool = false) {
         self.session = session
         self.runID = runID
         self.seriesKey = seriesKey
+        self.reviewQueue = reviewQueue
         seriesKeys = session.progress.filter { $0.stages["viewer_cache"]?.status == "done" }.map(\.seriesKey)
         load(seriesKey)
+    }
+
+    /// The series still to review after this one, in the run's order.
+    var remaining: Int {
+        guard let index = seriesKeys.firstIndex(of: seriesKey) else { return 0 }
+        return seriesKeys[(index + 1)...].filter(isUnreviewed).count
+    }
+
+    private func isUnreviewed(_ key: String) -> Bool {
+        session.progress.first { $0.seriesKey == key }.map { $0.qcStatus == nil || $0.qcStatus == "unreviewed" }
+            ?? false
     }
 
     var models: [String] { volume?.models ?? [] }
@@ -105,9 +121,14 @@ final class ViewerModel {
 
     func step(_ delta: Int) {
         guard let index = seriesKeys.firstIndex(of: seriesKey) else { return }
-        let next = index + delta
-        guard seriesKeys.indices.contains(next) else { return }
-        load(seriesKeys[next])
+        var next = index + delta
+        while seriesKeys.indices.contains(next) {
+            if !reviewQueue || isUnreviewed(seriesKeys[next]) {
+                load(seriesKeys[next])
+                return
+            }
+            next += delta
+        }
     }
 
     func mapping(_ plane: Plane) -> PlaneMapping? {
@@ -220,6 +241,7 @@ final class ViewerModel {
             try QCStore.set(status, comment: comment, runID: runID, seriesKey: seriesKey, reviewer: reviewer, in: db)
         }
         reloadQC()
+        if reviewQueue { step(1) }
     }
 
     func exclude(_ model: String, _ label: Int, _ excluded: Bool, reason: String?) {
