@@ -12,7 +12,7 @@ MODELS ?= --clinical
 IDENTITY ?= -
 CONFIG ?= Release
 
-.PHONY: all test test-worker test-swift runtime models licenses app sign verify dmg clean
+.PHONY: all test test-worker test-swift runtime worker models licenses app sign verify dmg clean
 
 all:
 	$(MAKE) runtime
@@ -24,7 +24,8 @@ test-worker:
 	cd Worker && uv run --no-project --with pytest --with jsonschema --with numpy --with ruff==0.17.2 \
 	  --with urllib3==2.8.0 --with matplotlib==3.11.2 --with SimpleITK==2.5.6 \
 	  --with xlsxwriter==3.2.9 --with openpyxl --with pandas==3.0.6 \
-	  --with pydicom==3.0.2 --with requests==2.34.2 --with imagecodecs==2026.8.16 --python 3.12 \
+	  --with pydicom==3.0.2 --with requests==2.34.2 --with imagecodecs==2026.8.16 \
+	  --with dcm2niix==1.0.20260724 --python 3.12 \
 	  bash -c 'ruff check . && ruff format --check . && pytest -q'
 	uv run --no-project --with pytest --with ruff==0.17.2 --python 3.12 \
 	  bash -c 'ruff check --config Worker/pyproject.toml Scripts && pytest -q Scripts/tests'
@@ -41,6 +42,15 @@ runtime:
 
 $(PY):
 	Scripts/build_runtime.sh
+
+# Only the worker package, into a runtime that exists: what build_runtime.sh
+# does with it, without rebuilding 1.2 GB. The old .pyc files go first,
+# because unchecked-hash .pyc files are trusted whatever the source says.
+worker: | $(PY)
+	rm -rf build/runtime/python/lib/python3.12/site-packages/bcoa_worker
+	cp -R Worker/bcoa_worker build/runtime/python/lib/python3.12/site-packages/bcoa_worker
+	find build/runtime/python/lib/python3.12/site-packages/bcoa_worker -name __pycache__ -prune -exec rm -rf {} +
+	"$(PY)" -I -m compileall -q --invalidation-mode unchecked-hash build/runtime/python/lib/python3.12/site-packages/bcoa_worker
 
 models: | $(PY)
 	"$(PY)" Scripts/fetch_models.py $(MODELS)
