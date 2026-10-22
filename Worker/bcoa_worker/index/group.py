@@ -779,7 +779,9 @@ class _Build:
             for f in files
             if f.source_id == source_id
         ]
-        common = os.path.commonprefix(folders) if folders else []
+        # On lists of folder names commonprefix compares whole names, which is
+        # what is wanted here; ruff's RUF071 assumes it is given path strings.
+        common = os.path.commonprefix(folders) if folders else []  # noqa: RUF071
         label = self.context.source_labels.get(source_id, "")
         return [
             (study_uid, source_id, candidate.level, candidate.label, candidate.link)
