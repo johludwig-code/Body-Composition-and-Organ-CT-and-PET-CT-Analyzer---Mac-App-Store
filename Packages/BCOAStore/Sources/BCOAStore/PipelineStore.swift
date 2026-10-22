@@ -36,16 +36,11 @@ public enum PipelineStore {
         models: [ModelEntry], device: String, settings: [String: Any], versions: [String: String],
         in db: Database, now: Date = Date()
     ) throws -> String {
+        if let existing = try existingRun(models: models, device: device, settings: settings, in: db) {
+            return existing
+        }
         let modelsJSON = try json(models.sorted { $0.name < $1.name }.map(\.json))
         let settingsJSON = try json(settings)
-        let candidates = try Row.fetchAll(db, sql: """
-            SELECT run_id, models_json, settings_json, device FROM runs
-            WHERE locked = 0 ORDER BY created_at DESC
-            """)
-        for row in candidates where row["models_json"] == modelsJSON
-            && row["settings_json"] == settingsJSON && row["device"] == device {
-            return row["run_id"]
-        }
         var id = "R" + stamp(now)
         // Two batches in one second get distinct runs.
         var suffix = 1
@@ -60,6 +55,22 @@ public enum PipelineStore {
                 """,
             arguments: [id, iso(now), try json(versions), device, modelsJSON, settingsJSON])
         return id
+    }
+
+    /// The run `run(…)` would reuse, without making one: what a preview of a
+    /// batch counts against.
+    public static func existingRun(
+        models: [ModelEntry], device: String, settings: [String: Any], in db: Database
+    ) throws -> String? {
+        let modelsJSON = try json(models.sorted { $0.name < $1.name }.map(\.json))
+        let settingsJSON = try json(settings)
+        let candidates = try Row.fetchAll(db, sql: """
+            SELECT run_id, models_json, settings_json, device FROM runs
+            WHERE locked = 0 ORDER BY created_at DESC
+            """)
+        return candidates.first {
+            $0["models_json"] == modelsJSON && $0["settings_json"] == settingsJSON && $0["device"] == device
+        }?["run_id"]
     }
 
     /// Adds the worker's versions from its hello, while the run is not
@@ -236,14 +247,16 @@ public enum PipelineStore {
 
     /// Selected current series of CT that have no metrics yet for every model
     /// of the run: what "Analyze Selected" queues.
-    public static func seriesToAnalyze(runID: String, models: [String], in db: Database) throws -> [String] {
+    public static func seriesToAnalyze(runID: String?, models: [String], in db: Database) throws -> [String] {
         let keys = try String.fetchAll(db, sql: """
             SELECT s.series_key FROM series AS s
             JOIN studies AS st USING (study_key)
             JOIN patients AS p USING (patient_key)
             WHERE s.selected = 1 AND s.index_state = 'current' AND p.id_status <> 'unconfirmed'
+              AND s.modality = 'CT'
             ORDER BY p.pseudonym, st.study_date, s.series_key
             """)
+        guard let runID else { return keys }
         return try keys.filter { key in
             let done = try Set(String.fetchAll(
                 db, sql: "SELECT DISTINCT model FROM results WHERE run_id = ? AND series_key = ?",

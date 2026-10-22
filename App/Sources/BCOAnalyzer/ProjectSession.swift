@@ -24,6 +24,13 @@ final class ProjectSession {
     /// A generation the merge could not take yet (ADR 0021 decision 11).
     var mergePending = false
 
+    /// The models the bundle offers, and every run of the project with the
+    /// state of its series (ADR 0031).
+    let bundledModels: [BundledModel]
+    var runs: [PipelineStore.RunInfo] = []
+    var currentRunID: String?
+    var progress: [PipelineStore.SeriesProgress] = []
+
     struct Cohort: Identifiable, Hashable {
         let id: Int64
         let label: String
@@ -35,6 +42,11 @@ final class ProjectSession {
     @ObservationIgnored private(set) var grants: [Int: SecurityScopedFolder] = [:]
     @ObservationIgnored private var queue: JobQueue!
     @ObservationIgnored private var jobCounter = 0
+    /// Pipeline jobs of this session: job → run and series.
+    @ObservationIgnored var pipelineJobs: [String: (run: String, series: String)] = [:]
+    /// Every result a job sent; a segmentation sends one per model.
+    @ObservationIgnored var resultLists: [String: [[String: JSONValue]]] = [:]
+    @ObservationIgnored private var recordedStatus: [String: JobStatus] = [:]
 
     var url: URL { folder.url }
     var catalogURL: URL { url.appendingPathComponent(IndexStore.catalogPath) }
@@ -50,6 +62,7 @@ final class ProjectSession {
         // crash or a force quit, and still holds source paths (ADR 0024).
         try? JobQueue.removeLeftoverJobFiles(projectDir: folder.url)
         database = try ProjectStore.open(projectFolder: folder.url)
+        bundledModels = BundledModel.load(from: BundleLayout.main.modelManifest)
         let database = database
         queue = JobQueue(
             launcher: BundledWorkerLauncher(),
@@ -72,12 +85,21 @@ final class ProjectSession {
     /// was interrupted and what is reachable again.
     private func atLaunch() async {
         await merge()
+        resumePipeline()
+        #if DEBUG
+        // Development only: `-BCOAAutoAnalyze clin_ct_organs` runs a batch on
+        // the restored project without anyone at the keyboard, so the
+        // pipeline can be checked in the real, sandboxed app.
+        if let models = UserDefaults.standard.string(forKey: "BCOAAutoAnalyze"), !models.isEmpty {
+            startAnalysis(models: models.split(separator: ",").map(String.init), device: "auto")
+        }
+        #endif
         let again = sources.filter { $0.state == "interrupted" || $0.state == "new" || $0.state == "unreachable" }
             .map(\.id)
         if !again.isEmpty { scan(again, quietly: true) }
     }
 
-    private func resolveGrants() {
+    func resolveGrants() {
         guard let rows = try? database.read({ try SourceRow.load($0) }) else { return }
         for row in rows where grants[row.id] == nil {
             // Read-only bookmarks: source DICOM is never modified (§8).
@@ -95,6 +117,11 @@ final class ProjectSession {
                 cohorts = try Row.fetchAll(db, sql: "SELECT cohort_id, label FROM cohorts ORDER BY label").map {
                     Cohort(id: $0["cohort_id"], label: $0["label"])
                 }
+                runs = try PipelineStore.runs(db)
+                if currentRunID == nil || !runs.contains(where: { $0.id == currentRunID }) {
+                    currentRunID = runs.first?.id
+                }
+                progress = try currentRunID.map { try PipelineStore.progress(runID: $0, in: db) } ?? []
             }
         } catch {
             message = String(localized: "The project database could not be read.")
@@ -174,7 +201,7 @@ final class ProjectSession {
         return "local"
     }
 
-    private func indexSources() -> [IndexSource] {
+    func indexSources() -> [IndexSource] {
         let all = (try? database.read { db in
             try Row.fetchAll(db, sql: "SELECT id, state, volume_kind FROM sources ORDER BY id")
         }) ?? []
@@ -253,6 +280,11 @@ final class ProjectSession {
     }
 
     private func finalize(_ job: QueuedJob) async {
+        if pipelineJobs[job.id] != nil {
+            await finalizeStage(job)
+            reload()
+            return
+        }
         let isCatalogJob = job.job.exclusiveGroup == "catalog"
         let catalogBusy = jobs.contains { $0.id != job.id && $0.status == .running && $0.job.exclusiveGroup == "catalog" }
         if isCatalogJob {
@@ -283,7 +315,7 @@ final class ProjectSession {
 
     /// Synchronous on purpose: inside an async function GRDB's async
     /// overload would be chosen, and these writes are a few rows.
-    private func write(_ updates: (Database) throws -> Void) {
+    func write(_ updates: (Database) throws -> Void) {
         do {
             try database.write(updates)
         } catch {
@@ -321,13 +353,29 @@ final class ProjectSession {
 
     // MARK: Jobs
 
-    func enqueue(_ kind: JobKind, prefix: String, payload: [String: JSONValue]) {
+    /// Queues a job; a pipeline job (with `run` and `series`) is recorded in
+    /// `jobs` first, so that a crash before it starts still leaves its row.
+    @discardableResult
+    func enqueue(
+        _ kind: JobKind, prefix: String, payload: [String: JSONValue],
+        run: String? = nil, series: String? = nil
+    ) -> String {
         jobCounter += 1
         let stamp = Int(Date().timeIntervalSince1970)
+        let id = "j_\(prefix)_\(stamp)_\(jobCounter)"
+        if let run, let series {
+            pipelineJobs[id] = (run, series)
+            recordedStatus[id] = .queued
+            write {
+                try PipelineStore.recordJob(id: id, runID: run, seriesKey: series, kind: kind.rawValue,
+                                            status: "queued", in: $0)
+            }
+        }
         let job = WorkerJob(
-            jobID: "j_\(prefix)_\(stamp)_\(jobCounter)", kind: kind, projectDir: url,
-            resourcesDir: BundleLayout.main.resources, payload: payload)
+            jobID: id, kind: kind, projectDir: url, resourcesDir: BundleLayout.main.resources,
+            payload: payload)
         Task { await queue.enqueue(job) }
+        return id
     }
 
     func cancel(_ jobID: String) {
@@ -344,11 +392,25 @@ final class ProjectSession {
         } else {
             jobs.append(job)
         }
+        // A pipeline job's state is written when it changes, not with every
+        // progress line; its end is written by the finalize hook.
+        if pipelineJobs[job.id] != nil, recordedStatus[job.id] != job.status, !job.status.isFinished {
+            recordedStatus[job.id] = job.status
+            write { try PipelineStore.updateJob(id: job.id, status: job.status.rawValue, errorCode: nil, in: $0) }
+        }
     }
 
     private func handle(_ event: WorkerEvent, from jobID: String) {
-        if case .result(_, let payload) = event {
+        switch event {
+        case .result(_, let payload):
             results[jobID] = payload
+            resultLists[jobID, default: []].append(payload)
+        case .hello(_, let versions):
+            if let run = pipelineJobs[jobID]?.run {
+                write { try PipelineStore.mergeVersions(versions, into: run, in: $0) }
+            }
+        default:
+            break
         }
     }
 

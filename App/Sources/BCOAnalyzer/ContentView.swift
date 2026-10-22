@@ -44,7 +44,8 @@ struct ContentView: View {
                 case .sources: SourcesView()
                 case .patients: PatientsView()
                 case .queue: QueueView()
-                case .results, .export:
+                case .results: ResultsView()
+                case .export:
                     ContentUnavailableView(
                         "Not Built Yet",
                         systemImage: "hammer",
@@ -96,8 +97,11 @@ struct QueueView: View {
             HStack {
                 Text("Queue").font(.title2)
                 Spacer()
-                Button("Retry Failed") { session.retryFailed() }
-                    .disabled(!session.jobs.contains { $0.status == .failed })
+                Button("Retry Failed") {
+                    session.retryFailed()
+                    session.retryFailedStages()
+                }
+                .disabled(!session.jobs.contains { $0.status == .failed })
             }
             .padding()
             Table(session.jobs) {
