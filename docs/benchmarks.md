@@ -71,6 +71,18 @@ models and projects on an external USB SSD (Samsung T7). Measured with
 In the app the three CTs of the ACRIN patient went through all four
 stages in about four minutes, one segmentation at a time.
 
+**All ten clinical models in the sandboxed app** (Debug build, MPS, one
+whole-body CT of ACRIN 042, 512×512×311, 3.75 mm; a Release build was
+signed on the same Mac meanwhile, so the times are upper bounds): 22.5 min
+of segmentation in one job, from the labelmaps' times about 1 min each for
+body, cardiac, muscles and ribs, 2 min for body composition, lungs, organs,
+peripheral bones and vertebrae, and 9 min for the digestive model, which
+predicts eight times over (OPEN_QUESTIONS #16); metrics of 144 labels 7 s,
+viewer cache 4 s. 121 of the 144 structures were found; the 23 others are
+bones outside the field of view (20 peripheral bones, two ribs, one
+vertebra). Body composition at L3: skeletal muscle 967 mL at 25 HU,
+subcutaneous fat 1 485 mL at −96 HU, visceral fat 638 mL at −75 HU.
+
 **Viewer (plan §9, 30 images/s at 512²):** one axial frame of 512 × 512, the
 gray slice through the window table and the overlay of ten models, takes
 5.4 ms in a release build (`swift test -c release --filter ViewerSpeed`),
