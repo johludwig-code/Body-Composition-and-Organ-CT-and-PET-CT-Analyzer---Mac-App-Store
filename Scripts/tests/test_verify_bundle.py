@@ -15,6 +15,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import verify_bundle
 
 
+@pytest.fixture(autouse=True)
+def _portable_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The fake bundle is never signed, so on a Mac, where codesign and nm
+    # exist, every test would fail on the signature checks it does not mean
+    # to test. Hiding both tools gives the same checks as on Linux.
+    which = verify_bundle.shutil.which
+
+    def without_mac_tools(name: str, *args: object, **kwargs: object) -> str | None:
+        return None if name in {"codesign", "nm"} else which(name, *args, **kwargs)
+
+    monkeypatch.setattr(verify_bundle.shutil, "which", without_mac_tools)
+
+
 @pytest.fixture
 def app(tmp_path: Path) -> Path:
     app = tmp_path / "BCOAnalyzer.app"
