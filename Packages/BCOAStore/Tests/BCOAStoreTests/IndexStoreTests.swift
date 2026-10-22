@@ -276,3 +276,42 @@ private func sha256(_ url: URL) throws -> String {
         #expect(try String.fetchOne(db, sql: "SELECT action FROM audit_log ORDER BY id DESC LIMIT 1") == "studies_assigned")
     }
 }
+
+@Test func aTypedIDJoinsThePatientItsLinkNamesOrMakesOne() throws {
+    let fixture = try Fixture()
+    try fixture.writeCatalog(generation: 1, linkKeyID: "0000000000000000")
+    try IndexStore.mergeIfPending(project: fixture.project, catalog: fixture.catalog)
+    let studies = try fixture.project.read { try String.fetchAll($0, sql: "SELECT study_key FROM studies ORDER BY 1") }
+    try fixture.project.write { db in
+        try IndexStore.setTypedPatientID("  CASE-17 ", studies: [studies[0]], in: db, actor: "test")
+        // The same ID for the second study: it joins the patient just made.
+        try IndexStore.setTypedPatientID("CASE-17", studies: [studies[1]], in: db, actor: "test")
+        #expect(throws: IndexStore.TypedIDError.notAnID) {
+            try IndexStore.setTypedPatientID("anonymous", studies: [studies[0]], in: db, actor: "test")
+        }
+    }
+    try fixture.project.read { (db: Database) throws in
+        #expect(try Int.fetchOne(db, sql: "SELECT count(DISTINCT patient_key) FROM studies") == 1)
+        #expect(try String.fetchOne(db, sql: """
+            SELECT p.id_status FROM patients p JOIN studies s USING (patient_key) LIMIT 1
+            """) == "confirmed")
+        #expect(try String.fetchAll(db, sql: "SELECT patient_id FROM identifiers") == ["CASE-17"])
+    }
+}
+
+@Test func unusedFilesComeFromTheCatalogOnly() throws {
+    let fixture = try Fixture()
+    try fixture.writeCatalog(generation: 1)
+    let catalog = try DatabaseQueue(path: fixture.catalog.path)
+    try catalog.write { db in
+        try db.execute(sql: """
+            INSERT INTO files (source_id, rel_path, size, mtime_ns, reader_version, kind, code)
+            VALUES (1, CAST('junk/broken.dcm' AS BLOB), 10, 0, 1, 'unreadable', 'read.invalid_dicom'),
+                   (1, CAST('scans.zip' AS BLOB), 10, 0, 1, 'archive', NULL)
+            """)
+        try db.execute(sql: "INSERT INTO bad_dirs VALUES (1, CAST('locked' AS BLOB), 'permission_denied')")
+    }
+    let entries = IndexStore.unusedEntries(catalog: fixture.catalog)
+    #expect(entries.map(\.path) == ["junk/broken.dcm", "scans.zip", "locked"])
+    #expect(entries.map(\.kind) == ["unreadable", "archive", "folder"])
+}

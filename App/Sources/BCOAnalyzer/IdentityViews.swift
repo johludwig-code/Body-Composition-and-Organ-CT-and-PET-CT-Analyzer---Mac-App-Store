@@ -331,3 +331,101 @@ struct AssignSheet: View {
         .onAppear { patient = session.tree.patients.first?.key ?? "" }
     }
 }
+
+extension ProjectSession {
+    func setPatientID(_ id: String, studies: [String]) {
+        let actor = reviewer
+        do {
+            try database.write { try IndexStore.setTypedPatientID(id, studies: studies, in: $0, actor: actor) }
+        } catch IndexStore.TypedIDError.noLinkKey {
+            message = String(localized: "Identifiers were removed from this project; patient IDs can no longer be set.")
+        } catch IndexStore.TypedIDError.notAnID {
+            message = String(localized: "That is not a usable patient ID: it is empty or a placeholder such as ANONYMOUS.")
+        } catch {
+            message = String(localized: "The patient ID could not be saved.")
+        }
+        reload()
+    }
+}
+
+/// "Set Patient ID…" (ADR 0024 decision 4): a typed ID links the studies to
+/// the patient that already has it, or to a new one.
+struct TypedIDSheet: View {
+    @Environment(ProjectSession.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    let studies: [String]
+    @State private var patientID = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Set Patient ID").font(.title2.bold())
+            Text("\(studies.count) studies are linked to this ID. A patient who already has it receives them; otherwise a new patient is made. The ID is kept only in the project's identifiers and goes with Remove Identifiers.")
+                .foregroundStyle(.secondary)
+            TextField("Patient ID", text: $patientID).textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Set") {
+                    session.setPatientID(patientID, studies: studies)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(patientID.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+    }
+}
+
+/// "Show Files…" (ADR 0024 decision 11): what the index left out, by
+/// relative path, read from the catalog when asked and kept nowhere else.
+struct UnusedFilesSheet: View {
+    @Environment(ProjectSession.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    @State private var entries: [IndexStore.UnusedEntry] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Files Not Used").font(.title2.bold())
+            Text("Files the index could not read or did not open, and folders it could not list. Paths are relative to their source folder and are shown here only.")
+                .foregroundStyle(.secondary)
+            Table(entries) {
+                TableColumn("Source") { entry in
+                    Text(session.sources.first { $0.id == entry.sourceID }?.displayPath ?? "\(entry.sourceID)")
+                }
+                .width(120)
+                TableColumn("Path") { Text($0.path).textSelection(.enabled) }
+                TableColumn("Why") { Text(UnusedText.reason($0)) }.width(200)
+            }
+            .frame(minHeight: 280)
+            HStack {
+                Text("\(entries.count) entries").foregroundStyle(.secondary)
+                Spacer()
+                Button("Close") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 760, height: 460)
+        .onAppear { entries = IndexStore.unusedEntries(catalog: session.catalogURL) }
+    }
+}
+
+enum UnusedText {
+    static func reason(_ entry: IndexStore.UnusedEntry) -> String {
+        switch entry.kind {
+        case "archive": String(localized: "An archive, not opened")
+        case "symlink": String(localized: "A symbolic link, not followed")
+        case "not_dicom": String(localized: "Neither DICOM nor NIfTI")
+        case "changing": String(localized: "Changed while read; read again at the next scan")
+        case "folder": String(localized: "Folder could not be opened")
+        default:
+            switch entry.code {
+            case "read.permission_denied": String(localized: "No permission to read")
+            case "read.io_error": String(localized: "Read error")
+            case "read.unsupported": String(localized: "Not supported")
+            default: String(localized: "Not a valid DICOM file")
+            }
+        }
+    }
+}

@@ -6,12 +6,16 @@ struct SourcesView: View {
     @Environment(AppModel.self) private var model
     @Environment(ProjectSession.self) private var session
     @State private var selection: SourceRow.ID?
+    @State private var showingUnused = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Source Folders").font(.title2)
                 Spacer()
+                Button("Show Files…") { showingUnused = true }
+                    .help("Files and folders the index could not use, by relative path.")
+                    .disabled(session.sources.isEmpty)
                 Button("Scan All") { session.scan() }
                     .disabled(session.sources.isEmpty || session.isIndexing)
                 Button("Add Source Folders…") { model.addSourceFolders() }
@@ -85,6 +89,7 @@ struct SourcesView: View {
                 .padding()
             }
         }
+        .sheet(isPresented: $showingUnused) { UnusedFilesSheet().environment(session) }
     }
 
     private func icon(_ source: SourceRow) -> String {

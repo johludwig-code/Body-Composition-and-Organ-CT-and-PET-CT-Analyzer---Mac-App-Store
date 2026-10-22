@@ -13,6 +13,7 @@ struct PatientsView: View {
     @State private var confirmingIDs = false
     @State private var editingSettings = false
     @State private var assigning: [String]?
+    @State private var typingID: [String]?
     @AppStorage("bulkThinCTMaxMM") private var bulkMaxMM = 3.0
 
     var body: some View {
@@ -87,6 +88,8 @@ struct PatientsView: View {
                         .disabled(studies.isEmpty)
                     Button("Assign to Patient…") { assigning = studies }
                         .disabled(studies.isEmpty)
+                    Button("Set Patient ID…") { typingID = studies }
+                        .disabled(studies.isEmpty)
                 }
             }
             Divider()
@@ -122,6 +125,9 @@ struct PatientsView: View {
         .sheet(isPresented: $confirmingIDs) { ConfirmIDsSheet().environment(session) }
         .sheet(item: Binding(get: { assigning.map(StudyList.init) }, set: { assigning = $0?.keys })) {
             AssignSheet(studies: $0.keys).environment(session)
+        }
+        .sheet(item: Binding(get: { typingID.map(StudyList.init) }, set: { typingID = $0?.keys })) {
+            TypedIDSheet(studies: $0.keys).environment(session)
         }
         .sheet(isPresented: $editingSettings) { SelectionSettingsSheet().environment(session) }
         .alert("Save Selection as Cohort", isPresented: $askingCohortName) {

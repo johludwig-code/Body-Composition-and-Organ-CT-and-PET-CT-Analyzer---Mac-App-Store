@@ -460,3 +460,84 @@ extension IndexStore {
         try db.execute(sql: IndexSQL.patientAges)
     }
 }
+
+extension IndexStore {
+    public enum TypedIDError: Error, Equatable {
+        /// After Remove Identifiers there is no key to link a typed ID with.
+        case noLinkKey
+        /// Empty, or one of the placeholders that count as missing.
+        case notAnID
+    }
+
+    /// "Set Patient ID…" (ADR 0024 decision 4): the typed ID's `pid:` link,
+    /// made with the project's key as the worker makes it, names the patient
+    /// the studies join: the one that already holds the link, or a new
+    /// confirmed one. The plain ID goes into `identifiers` only.
+    public static func setTypedPatientID(
+        _ patientID: String, studies: [String], placeholders: [String] = LinkHasher.defaultPlaceholders,
+        in db: Database, actor: String, now: Date = Date()
+    ) throws {
+        guard let hasher = try linkKey(db) else { throw TypedIDError.noLinkKey }
+        guard let link = hasher.pidLink(patientID, placeholders: placeholders) else { throw TypedIDError.notAnID }
+        let normalized = LinkHasher.normalize(patientID)
+        try db.execute(sql: SelectionSQL.inputs)
+        try db.execute(sql: IdentitySQL.inputs)
+        try db.execute(
+            sql: "INSERT INTO temp.id_param (now, actor, keep_identifiers, level) VALUES (?, ?, ?, NULL)",
+            arguments: [iso(now), actor, try identifiersRemoved(db) ? 0 : 1])
+        for study in studies {
+            try db.execute(sql: "INSERT OR REPLACE INTO temp.id_typed VALUES (?, ?, ?)",
+                           arguments: [study, link, normalized])
+        }
+        try db.execute(sql: IdentitySQL.createTypedPatient)
+        try db.execute(sql: IdentitySQL.assignStudy)
+        try db.execute(sql: SelectionSQL.applyAuto)
+        try db.execute(sql: SelectionSQL.repairPrimary)
+        try db.execute(sql: IndexSQL.patientAges)
+    }
+
+    /// One file or folder the index could not use (ADR 0024 decision 11).
+    public struct UnusedEntry: Sendable, Equatable, Identifiable {
+        public var id: String { "\(sourceID):\(path)" }
+        public var sourceID: Int
+        public var path: String
+        /// `unreadable`, `archive`, `symlink`, `not_dicom`, `changing` or `folder`.
+        public var kind: String
+        public var code: String?
+    }
+
+    /// "Show Files…": relative paths of the files and folders the index left
+    /// out, read from the catalog on request and never written to the
+    /// project or a log, because folder names can carry patient names.
+    public static func unusedEntries(catalog url: URL, limit: Int = 5000) -> [UnusedEntry] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        var configuration = Configuration()
+        configuration.readonly = true
+        guard let catalog = try? DatabaseQueue(path: url.path, configuration: configuration) else { return [] }
+        return (try? catalog.read { db -> [UnusedEntry] in
+            var entries = try Row.fetchAll(db, sql: """
+                SELECT source_id, rel_path, kind, code FROM files
+                WHERE kind IN ('unreadable', 'archive', 'symlink', 'not_dicom', 'changing')
+                ORDER BY source_id, rel_path LIMIT ?
+                """, arguments: [limit]).map { row -> UnusedEntry in
+                let raw: Data = row["rel_path"]
+                return UnusedEntry(sourceID: row["source_id"], path: String(decoding: raw, as: UTF8.self),
+                                   kind: row["kind"], code: row["code"])
+            }
+            entries += try Row.fetchAll(db, sql: "SELECT source_id, rel_dir, code FROM bad_dirs ORDER BY 1, 2")
+                .map { row in
+                    let raw: Data = row["rel_dir"]
+                    return UnusedEntry(sourceID: row["source_id"], path: String(decoding: raw, as: UTF8.self),
+                                       kind: "folder", code: row["code"])
+                }
+            return entries
+        }) ?? []
+    }
+}
+
+extension LinkHasher {
+    /// ADR 0024's default placeholder IDs; `identity_config` may change them.
+    public static let defaultPlaceholders = [
+        "ANONYMOUS", "ANONYMIZED", "ANONYMISED", "ANON", "UNKNOWN", "NONE", "NULL", "N/A", "NA", "0", "-",
+    ]
+}
