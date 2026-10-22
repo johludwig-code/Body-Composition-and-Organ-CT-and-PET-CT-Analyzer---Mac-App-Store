@@ -1654,12 +1654,15 @@ def _names(w: _Writer) -> None:
         ),
     )
     latin1 = b"nfd/latin1/Bild_\xe9.dcm"
+    probe = w.path(1, latin1)
     try:
-        probe = w.path(1, latin1)
         probe.write_bytes(b"")
     except (OSError, UnicodeError):
         # APFS refuses names that are not UTF-8; the catalog's raw bytes are
-        # then never put to that test here.
+        # then never put to that test here. path() has already made the
+        # folder, which would leave the corpus with an empty latin1 folder
+        # that only the Mac has.
+        probe.parent.rmdir()
         return
     w.features.add(NON_UTF8_NAMES)
     names = {0: "IM0001.dcm", 1: os.fsdecode(b"Bild_\xe9.dcm"), 2: "IM0003.dcm"}
