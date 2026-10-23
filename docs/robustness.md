@@ -50,3 +50,14 @@ the public ACRIN case on the Ludwig T7 with its three CT series selected.
 |---|---|---|---|
 | before the fixes | `clin_ct_organs` | the first segmentation's worker killed after 20 s: its stage failed with `worker_exit_9`, the batch went on; the app killed during the second segmentation: **its worker ran on as an orphan of launchd** until the test killed it 60 s later; relaunched, the running and the queued segmentation came back as interrupted and ran again, Retry Failed redid the killed one | the run complete, 3 × 19 structures; **two scratch folders of killed workers left behind** |
 | after the fixes | `clin_ct_body` | the same two kills | no worker outlived the app (gone within 0.3 s); the run complete, 3 × 4 structures, 86 s after the first launch; no job left running, no partial folder, no scratch: `PASS` |
+
+## From the DMG
+
+`build/BCOAnalyzer.dmg` of 23 October 2026 (1.89 GB, ad hoc, SHA-256
+`3a7528e72714cbd42e38eb85e894d7278e4ebfd8b785ede0e0635041d89cb061`), mounted
+read-only: `codesign --verify --deep --strict` passes; the app started from
+the image, rescanned the test project's interrupted source with its
+sandboxed worker, and left no process after Quit. The bundled Python cannot
+be run from a shell (exit 133): it carries the sandbox's inherit
+entitlement, which macOS honours only for a child of the sandboxed app. That
+is intended; self-tests outside the app use the unsigned `build/runtime`.
