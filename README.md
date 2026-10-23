@@ -39,7 +39,9 @@ worker, the scripts, the models or the build, `bundle.yml` also builds the ad
 hoc signed Release app with its Python backend, runs `make verify`, and has
 the sandboxed worker run the S2 probe and a self-test with inference. Outside
 CI, in Linux containers: all ten clinical models on a real public PET/CT,
-whose numbers are in [`docs/benchmarks.md`](docs/benchmarks.md). On the
+whose numbers are in [`docs/benchmarks.md`](docs/benchmarks.md). What the app
+does when things go wrong, and how that is tested, including a crash test of
+the real app: [`docs/robustness.md`](docs/robustness.md). On the
 owner's Mac (M4 Pro): the sandboxed app indexed, segmented with all ten
 models, exported and drew a case report of a public case (ADR 0030, 0032).
 
