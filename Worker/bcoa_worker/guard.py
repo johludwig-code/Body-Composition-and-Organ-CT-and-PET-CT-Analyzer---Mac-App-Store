@@ -26,9 +26,9 @@ import sys
 import traceback
 from typing import Any
 
-# Programs the worker may start, by absolute path. None yet: dcm2niix joins
-# with the conversion job (milestone M3).
-ALLOWED_PROGRAMS: frozenset[str] = frozenset()
+# Programs the worker may start, by absolute path. None by default; the
+# conversion job adds the bundled dcm2niix, and only that (ADR 0031).
+ALLOWED_PROGRAMS: set[str] = set()
 
 _NETWORK_FAMILIES = {socket.AF_INET, socket.AF_INET6}
 _PROGRAM_EVENTS = {
@@ -97,6 +97,15 @@ def _hook(event: str, args: tuple[Any, ...]) -> None:
         program = _program(event, args)
         if program not in ALLOWED_PROGRAMS:
             _refuse(event, program)
+
+
+def allow_program(path: str) -> None:
+    """Let the worker start the program at this absolute path, and only by
+    this path. A job adds a program before it starts it, and the bundled
+    dcm2niix is the only one there is."""
+    if not os.path.isabs(path):
+        raise ValueError("a program is allowed by its absolute path only")
+    ALLOWED_PROGRAMS.add(path)
 
 
 def install() -> None:

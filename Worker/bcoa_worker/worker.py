@@ -2,17 +2,21 @@
 
 Life of a worker: read the job, claim stdout for the protocol, say hello, keep
 a heartbeat going, run the one job, say done, exit. Exit codes: 0 ok, 1 failed,
-130 cancelled (SIGTERM), 2 the job file itself was unusable.
+130 cancelled (SIGTERM), 2 the job file itself was unusable, 3 the app was
+gone (its process ended, or nobody reads the protocol any more).
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
+import os
 import platform
 import shutil
 import signal
 import sys
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from types import FrameType
@@ -40,17 +44,34 @@ class Cancelled(Exception):
 JobHandler = Callable[[Job, ProtocolChannel], None]
 
 
-def _handlers() -> dict[str, JobHandler]:
-    # Imported lazily: a selftest must not pay for importing torch twice, and
-    # an index job must not import torch at all.
-    from bcoa_worker.jobs import export, segment, selftest, spike_s2
+# Each job imports its own module and no other's. A selftest must not pay for
+# importing torch twice, and an index job must not import torch, MOOSE or the
+# export at all. The other way round matters as much: bcoa_worker.index blocks
+# `requests` for the whole process, and moosez imports it at module level, so
+# a segment or selftest job that imported the index package would fail.
+_JOB_MODULES = {
+    "convert": "bcoa_worker.jobs.convert",
+    "metrics": "bcoa_worker.jobs.metrics",
+    "viewer_cache": "bcoa_worker.jobs.viewer_cache",
+    "export": "bcoa_worker.jobs.export",
+    "selftest": "bcoa_worker.jobs.selftest",
+    "spike_s2": "bcoa_worker.jobs.spike_s2",
+    "segment": "bcoa_worker.jobs.segment",
+    "index": "bcoa_worker.index.run",
+}
 
-    return {
-        "export": export.run,
-        "selftest": selftest.run,
-        "spike_s2": spike_s2.run,
-        "segment": segment.run,
-    }
+
+def _lazy(module: str) -> JobHandler:
+    # Imported when the job runs, inside run_job: the heartbeat is already
+    # going while torch loads, and a failed import ends as a reported error.
+    def run(job: Job, channel: ProtocolChannel) -> None:
+        importlib.import_module(module).run(job, channel)
+
+    return run
+
+
+def _handlers() -> dict[str, JobHandler]:
+    return {kind: _lazy(module) for kind, module in _JOB_MODULES.items()}
 
 
 def _versions() -> dict[str, str]:
@@ -67,12 +88,57 @@ def _versions() -> dict[str, str]:
     return versions
 
 
+EXIT_ORPHANED = 3
+
+
+def _leave(job: Job, exit: Callable[[int], object] = os._exit) -> None:
+    """The app is gone: nobody will read the result, and App Review
+    2.4.5(iii) allows no process after the app has ended. The scratch goes,
+    then the process, at once, without unwinding a segmentation in torch."""
+    shutil.rmtree(scratch_dir(job), ignore_errors=True)
+    exit(EXIT_ORPHANED)
+
+
+def _watch_parent(
+    job: Job,
+    parent: int,
+    *,
+    interval: float = 1.0,
+    getppid: Callable[[], int] = os.getppid,
+    exit: Callable[[int], object] = os._exit,
+) -> threading.Thread:
+    """Ends the worker when the app's process ends. A quit cancels the job
+    with SIGTERM, but a crash or a force quit sends nothing: the worker is
+    handed to launchd and, mid-segmentation, ran on for minutes (found by
+    the crash test of 23 October 2026). A changed parent is the one sign
+    that cannot be missed."""
+
+    def watch() -> None:
+        while True:
+            # launchd (pid 1) as the parent means the app was gone before the
+            # worker even looked; the app never starts a worker through it.
+            current = getppid()
+            if current != parent or current == 1:
+                _leave(job, exit)
+                return
+            time.sleep(interval)
+
+    thread = threading.Thread(target=watch, name="parent-watch", daemon=True)
+    thread.start()
+    return thread
+
+
 def _start_heartbeat(job: Job, channel: ProtocolChannel) -> threading.Event:
     stop = threading.Event()
 
     def beat() -> None:
         while not stop.wait(job.heartbeat_seconds):
-            channel.send(Heartbeat.now(job.job_id))
+            try:
+                channel.send(Heartbeat.now(job.job_id))
+            except OSError:
+                # The app closed its end of the pipe: the same as its death.
+                _leave(job)
+                return
 
     threading.Thread(target=beat, name="heartbeat", daemon=True).start()
     return stop
@@ -136,6 +202,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     channel = ProtocolChannel.take_over_stdout(job.log_path)
+    _watch_parent(job, os.getppid())
     apply_runtime_environment(job)
     # After the worker's own setup, which creates folders and nothing else,
     # and before any job imports torch, MOOSE or nnU-Net (ADR 0016).

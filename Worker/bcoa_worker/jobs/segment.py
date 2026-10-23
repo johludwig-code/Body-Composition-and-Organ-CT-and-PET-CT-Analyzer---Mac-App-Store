@@ -12,14 +12,17 @@ from bcoa_worker import moose_adapter
 from bcoa_worker.channel import ProtocolChannel
 from bcoa_worker.environment import scratch_dir
 from bcoa_worker.errors import JobFailure
-from bcoa_worker.protocol import Artifact, Job, Log, Progress, Result
+from bcoa_worker.protocol import Artifact, Job, Log, Progress, ProtocolError, Result
 
 
 def run(job: Job, channel: ProtocolChannel) -> None:
     payload = job.payload
-    series_key = str(payload["series_key"])
-    source = job.project_path(str(payload["input_nifti"]))
-    models = [str(m) for m in payload["models"]]
+    series_key = job.series_key()
+    try:
+        source = job.project_path(str(payload["input_nifti"]))
+        models = [str(m) for m in payload["models"]]
+    except (KeyError, TypeError) as exc:
+        raise ProtocolError(f"segment payload is incomplete: {exc}") from exc
     requested = str(payload.get("device", "auto"))
     retry_on_cpu = bool(payload.get("retry_on_cpu", True))
 
@@ -30,7 +33,9 @@ def run(job: Job, channel: ProtocolChannel) -> None:
     except moose_adapter.AdapterError as exc:
         raise JobFailure(exc.code, str(exc)) from exc
 
-    labels_dir = job.project_path(f"work/{series_key}/labels")
+    # Per run (ADR 0031 decision 11): a second run of the same series must
+    # not overwrite the labelmaps a locked run's export and viewer show.
+    labels_dir = job.project_path(str(payload.get("labels_dir") or f"work/{series_key}/labels"))
     labels_dir.mkdir(parents=True, exist_ok=True)
     accelerator = moose_adapter.choose_accelerator(requested)
 

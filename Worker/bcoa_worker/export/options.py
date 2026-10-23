@@ -46,6 +46,10 @@ class ExportOptions:
     methods_text: bool = True
     masks: bool = False
     reproducibility_package: bool = False
+    # One content file per case for the app's PDF (ADR 0017); with tables
+    # off, an export writes the reports alone.
+    case_reports: bool = False
+    tables: bool = True
 
     @property
     def one_row_per_study(self) -> bool:
@@ -107,8 +111,9 @@ def parse_options(raw: Mapping[str, Any]) -> ExportOptions:
         methods_text=bool(raw.get("methods_text", True)),
         masks=bool(raw.get("masks", False)),
         reproducibility_package=bool(raw.get("reproducibility_package", False)),
+        case_reports=bool(raw.get("case_reports", False)),
+        tables=bool(raw.get("tables", True)),
     )
-    if options.reproducibility_package:
-        # ADR 0013: refused until M6 builds it, never silently left out.
-        raise ExportOptionError("the reproducibility package is not built yet (milestone M6)")
+    if not (options.tables or options.case_reports):
+        raise ExportOptionError("an export without tables must at least write case reports")
     return options

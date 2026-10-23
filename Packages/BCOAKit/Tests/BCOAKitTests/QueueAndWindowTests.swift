@@ -54,3 +54,27 @@ private func job(_ id: String, _ kind: JobKind, _ status: JobStatus) -> QueuedJo
     #expect(LabelNames.displayName("kidney_left") == "Kidney left")
     #expect(LabelNames.displayName("vertebra_L3") == "Vertebra L3")
 }
+
+private func indexJob(_ id: String, _ mode: String, _ status: JobStatus) -> QueuedJob {
+    QueuedJob(
+        job: WorkerJob(jobID: id, kind: .index, projectDir: URL(fileURLWithPath: "/p"),
+                       resourcesDir: URL(fileURLWithPath: "/r"), payload: ["mode": .string(mode)]),
+        status: status)
+}
+
+@Test func scansAndRegroupsRunOneAtATime() {
+    // Both write the catalog; the merge of the first must come before the
+    // second starts (ADR 0021 decision 4). Previews only read it.
+    let jobs = [indexJob("a", "scan", .running), indexJob("b", "regroup", .queued),
+                indexJob("c", "previews", .queued)]
+    #expect(QueuePolicy.jobsToStart(jobs, paused: false) == ["c"])
+    let idle = [indexJob("a", "scan", .queued), indexJob("b", "scan", .queued)]
+    #expect(QueuePolicy.jobsToStart(idle, paused: false) == ["a"])
+}
+
+@Test func onlyScanAndRegroupAreInTheCatalogGroup() {
+    #expect(indexJob("a", "scan", .queued).job.exclusiveGroup == "catalog")
+    #expect(indexJob("a", "regroup", .queued).job.exclusiveGroup == "catalog")
+    #expect(indexJob("a", "previews", .queued).job.exclusiveGroup == nil)
+    #expect(job("e", .export, .queued).job.exclusiveGroup == nil)
+}

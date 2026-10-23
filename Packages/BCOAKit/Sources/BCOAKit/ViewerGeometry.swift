@@ -41,6 +41,13 @@ public enum Plane: String, CaseIterable, Sendable {
 /// Orientation letters at the four edges of a displayed slice.
 public struct EdgeLetters: Equatable, Sendable {
     public var left: String, right: String, top: String, bottom: String
+
+    public init(left: String, right: String, top: String, bottom: String) {
+        self.left = left
+        self.right = right
+        self.top = top
+        self.bottom = bottom
+    }
 }
 
 /// How one plane of an LPS volume is laid out on screen (plan §9).

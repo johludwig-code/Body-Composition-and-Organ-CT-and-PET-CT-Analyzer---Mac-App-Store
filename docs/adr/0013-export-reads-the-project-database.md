@@ -69,3 +69,6 @@ app already has them in `project.sqlite`.
 The worker depends on the database schema; a migration that renames a column
 the export reads fails the worker suite. The export can run while the app
 keeps writing, because SQLite readers see a consistent snapshot.
+
+*Corrected by [ADR 0021](0021-journal-modes-locking-and-scheduling.md) on
+2026-10-08: this holds only in WAL mode.*

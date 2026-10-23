@@ -22,7 +22,18 @@ struct BCOAnalyzerApp: App {
                     .keyboardShortcut("o")
                 Button("Add Source Folders…") { model.addSourceFolders() }
                     .keyboardShortcut("a", modifiers: [.command, .shift])
-                    .disabled(model.project == nil)
+                    .disabled(model.session == nil)
+                Divider()
+                Button("Remove Identifiers…") { model.showRemoveIdentifiers = true }
+                    .disabled(model.session == nil)
+            }
+        }
+
+        // One window per series, opened from Results & QC (plan §1: the
+        // viewer opens as a detail view or a window of its own).
+        WindowGroup("Viewer", id: "viewer", for: ViewerRequest.self) { $request in
+            if let request {
+                ViewerWindow(request: request).environment(model)
             }
         }
 
@@ -52,6 +63,11 @@ enum AppIdentity {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? "BCO Analyzer"
+    }
+
+    /// The marketing version alone: what the export's methods text cites.
+    static var shortVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
     static var version: String {

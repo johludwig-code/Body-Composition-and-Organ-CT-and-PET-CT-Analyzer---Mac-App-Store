@@ -83,7 +83,6 @@ def test_defaults_are_the_plans_defaults() -> None:
         {"metrics": ["hu_mode"]},
         {"models": []},
         {"labels": "liver"},
-        {"reproducibility_package": True},
     ],
 )
 def test_options_the_dialog_cannot_send_are_refused(raw: dict[str, object]) -> None:
@@ -674,3 +673,95 @@ def test_the_protocol_fixture_is_a_valid_export_job() -> None:
     payload = json.loads(fixture.read_text())["payload"]
     assert export_job._STEM.match(payload["stem"])
     assert parse_options(payload["options"]).layout == "wide"
+
+
+def test_the_methods_text_names_the_device_the_results_ran_on(project) -> None:
+    # A run asks for "auto" (ADR 0031); the sentence names what was used.
+    asked_auto = dataclasses.replace(project, run=dataclasses.replace(project.run, device="auto"))
+    text = _export(asked_auto).methods_text
+    assert "(PyTorch mps)" in text and "PyTorch auto" not in text
+
+
+def test_every_export_says_research_only_and_not_a_medical_device(tmp_path: Path) -> None:
+    # Plan §2 rule 5 and §13: the provenance sheet and the methods file both
+    # carry the notice; the paragraph itself stays the one to cite.
+    export_project.create(tmp_path)
+    export_job.run(
+        _job(
+            tmp_path, {"run_id": export_project.RUN, "stem": "cohort", "options": {"format": "csv"}}
+        ),
+        ProtocolChannel(io.StringIO()),
+    )
+    methods = (tmp_path / "exports" / "cohort.methods.txt").read_text(encoding="utf-8")
+    assert methods.rstrip().endswith(
+        "For research use only. Not for clinical use. "
+        "Not a medical device; not for diagnosis or treatment decisions."
+    )
+    provenance = (tmp_path / "exports" / "cohort.provenance.csv").read_text(encoding="utf-8")
+    assert "regulatory_status" in provenance and "Not a medical device" in provenance
+    assert "For research use only. Not for clinical use." in provenance
+
+
+def test_the_reproducibility_package_holds_no_identifier_and_no_image(tmp_path: Path) -> None:
+    import zipfile
+
+    export_project.create(tmp_path)
+    options = {"identifiers": "both", "dates": "iso", "reproducibility_package": True}
+    for attempt in range(2):
+        export_job.run(
+            _job(
+                tmp_path,
+                {"run_id": export_project.RUN, "stem": f"cohort{attempt}", "options": options},
+            ),
+            ProtocolChannel(io.StringIO()),
+        )
+    first = tmp_path / "exports" / "cohort0_reproducibility.zip"
+    with zipfile.ZipFile(first) as archive:
+        names = set(archive.namelist())
+        assert names == {
+            "README.txt",
+            "provenance.json",
+            "results_long.csv",
+            "labels.csv",
+            "qc.csv",
+            "data_dictionary.csv",
+            "export_settings.json",
+            "methods.txt",
+            "LICENSES.txt",
+        }
+        text = b"".join(archive.read(n) for n in names).decode("utf-8")
+        provenance = json.loads(archive.read("provenance.json"))
+        results = archive.read("results_long.csv").decode("utf-8").splitlines()
+    # The export asked for patient IDs and full dates; the package has neither.
+    for patient_id in ("00012345", "1E5"):
+        assert patient_id not in text
+    assert "2026-" not in results[1] and "P0001" in "\n".join(results)
+    assert provenance["run_id"] == export_project.RUN and provenance["models"]
+    assert "Not a medical device" in text
+    # The same export makes the same archive.
+    second = tmp_path / "exports" / "cohort1_reproducibility.zip"
+    with zipfile.ZipFile(first) as a, zipfile.ZipFile(second) as b:
+        assert {n: a.read(n) for n in a.namelist() if n != "export_settings.json"} == {
+            n: b.read(n) for n in b.namelist() if n != "export_settings.json"
+        }
+
+
+def test_volume_outliers_are_flagged_from_twenty_series_on() -> None:
+    from bcoa_worker.export.tables import volume_outliers
+
+    def row(series: str, volume: float) -> export_data.ResultRow:
+        return export_data.ResultRow(
+            series,
+            "clin_ct_organs",
+            8,
+            "liver",
+            {"volume_ml": volume, "voxel_count": 1000},
+            "mps",
+            (),
+        )
+
+    # Median 1 570 mL, MAD 100: the 120 mL "liver" is z ≈ −9.8, as in the
+    # app's CohortStatistics test.
+    rows = [row(f"s_{n:02d}", 1400.0 + n * 20) for n in range(19)] + [row("s_bad", 120.0)]
+    assert volume_outliers(rows) == {("s_bad", "clin_ct_organs", 8)}
+    assert volume_outliers(rows[:10] + rows[-1:]) == set()

@@ -1,0 +1,4550 @@
+{
+  "format": 1,
+  "about": "What the index must make of the synthetic corpus of Worker/tests/dicom_factory.py (ADR 0026 decision 1), derived by hand from ADRs 0022 to 0024. Series are named by scenario and description, never by UID. corpus_check.compare holds a merged project.sqlite to it.",
+  "review": {
+    "state": "unreviewed",
+    "gate": "A regression test until the owner has reviewed this file; then M2's acceptance gate (ADR 0026 decision 2)."
+  },
+  "generator": {
+    "module": "dicom_factory.build_corpus",
+    "seed": "bcoa-corpus-1",
+    "private_syntax": "2.25.170455376541867032814933066410407116013"
+  },
+  "job": {
+    "sources": {"1": "source1", "2": "source2"},
+    "link_key": "base64:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "link_key_id": "3683c115de125163",
+    "selection": "the defaults of ADR 0023 decision 8, as Protocol/fixtures/jobs/index_scan.json writes them",
+    "identity": "the defaults of ADR 0024: the placeholder list, folder_ids true, folder_max_level 3",
+    "merge": {"keep_identifiers": 1, "new_study_policy": "refuse"}
+  },
+  "features": {
+    "permissions": "A file and a folder with mode 000 are written only where a probe shows the mode is enforced (not as root).",
+    "non_utf8_names": "A file name with the byte 0xE9 is written only where the file system accepts it (not APFS)."
+  },
+  "conventions": [
+    {
+      "id": "C1",
+      "rule": "check.too_few_slices is raised on every image part, DICOM or NIfTI, of any modality, whose slice_count is known and below min_slices; select.excluded.too_few_slices likewise needs a known slice_count.",
+      "why": "The registry lists the check, and ADR 0023 the exclusion, without saying where either applies."
+    },
+    {
+      "id": "C2",
+      "rule": "Geometry checks (no_geometry, gap, uneven_spacing, duplicate_positions, gantry_tilt, tilt_tag_only, oblique) are raised on image parts only, a Secondary Capture included.",
+      "why": "ADR 0022 decision 11 computes geometry per part; a dose report has none to report."
+    },
+    {
+      "id": "C3",
+      "rule": "A missing ImageType gives select.excluded.image_type_missing alone.",
+      "why": "The conditions on value 0 and on the plane say nothing more about an ImageType that is not there."
+    },
+    {
+      "id": "C4",
+      "rule": "image_type_value names the first excluded value in ImageType order; description names the first configured term that matches.",
+      "why": "A reason holds one params object, so one value and one term."
+    },
+    {
+      "id": "C5",
+      "rule": "A NIfTI part skips the ImageType conditions; a NULL description matches no term.",
+      "why": "A NIfTI file has no ImageType; ADR 0022 decision 13 lets its name stand in."
+    },
+    {
+      "id": "C6",
+      "rule": "A held part keeps the worker's rank (auto_rank 1, auto_selected 1) with selected 0 and is_primary 0, and its reason is outcome held with select.held.unconfirmed_patient alone; the worker's reason waits in if_confirmed, which compare does not read.",
+      "why": "ADR 0023's eligibility table has the merge apply select.held.unconfirmed_patient, and ADR 0029 makes IndexSQL.merge write it; the confirmation or assignment that releases the study gives the worker's reason back."
+    },
+    {
+      "id": "C7",
+      "rule": "check.duplicates counts every file that lost its instance, the loser of a UID conflict included; check.uid_conflict counts the losers whose study or series UID differs from the winner's, on the winner's part; check.uid_conflict_lost counts the same losers on the part of their own series. A series whose only file lost has no part, so the corpus's stray file shows only on the winner's side; test_index_group.py holds the loser's side.",
+      "why": "ADR 0022 decision 8 counts losers in duplicates and uses the winner's grouping; ADR 0029 adds the loser's side, whose series otherwise lost files without a word."
+    },
+    {
+      "id": "C8",
+      "rule": "truncated, missing pixel data and transfer syntax are judged on winning files only.",
+      "why": "The losers are not what the converter reads."
+    },
+    {
+      "id": "C9",
+      "rule": "Parts of a split series are told apart by what differs (modality, orientation, matrix, spacing); part is asserted only where ADR 0022's numbering decides it (same lowest position, then the lower InstanceNumber).",
+      "why": "The ADR orders parts by position along each part's own normal, which says nothing for a part without positions."
+    },
+    {
+      "id": "C10",
+      "rule": "A NIfTI study has no date, description or age; its patient's accession_numbers is an empty JSON array.",
+      "why": "A NIfTI header carries none of them; the merge writes json_group_array of nothing."
+    },
+    {
+      "id": "C11",
+      "rule": "An unnamed NIfTI file has pid_state missing and folder candidates (levels 0 and 1, \"nifti\"), so its patient is unconfirmed, one per file.",
+      "why": "ADR 0024 decision 3 records candidates for every study whose PatientID is missing."
+    },
+    {
+      "id": "C12",
+      "rule": "Enhanced CT takes thickness, rescale and kernel from the functional groups, so its volume has no check.no_rescale; a part with a file of mixed frames has no geometry: no slice count, extent, spacing or orientation, check.no_geometry beside check.enhanced_mixed_frames, and excluded by no_geometry and mixed_frames.",
+      "why": "ADR 0022 decision 3 reads the functional groups a second time; ADR 0028 decision 3 decides that a part with a file of mixed frames has no geometry."
+    },
+    {
+      "id": "C13",
+      "rule": "check.pet_not_attenuation_corrected is raised when CorrectedImage is present without ATTN, not when it is absent.",
+      "why": "ADR 0022 decision 12 stores NULL for an absent tag, which says nothing is known."
+    },
+    {
+      "id": "C14",
+      "rule": "A Part 10 file cut inside its file meta, and one whose DICM is followed by no dataset, are unreadable with read.invalid_dicom.",
+      "why": "pydicom raises on the first and returns an empty dataset, without SOP UIDs, for the second."
+    },
+    {
+      "id": "C15",
+      "rule": "A .nii or .nii.gz without a valid NIfTI-1 header is an archive when it is gzip and not_dicom otherwise.",
+      "why": "ADR 0022 decision 2's table."
+    },
+    {
+      "id": "C16",
+      "rule": "check.sex_conflict's values are compared as a set.",
+      "why": "group_concat(DISTINCT …) has no defined order."
+    },
+    {
+      "id": "C17",
+      "rule": "identifiers.patient_id is the normalized PatientID (stripped, NFC), the study's most frequent one.",
+      "why": "ADR 0024 decision 1 normalizes before linking; the pending identifier is assumed to be what was linked."
+    },
+    {
+      "id": "C18",
+      "rule": "study_date is ISO 8601 (YYYY-MM-DD).",
+      "why": "IndexSQL.patientAges computes julianday(study_date), which reads no other form."
+    },
+    {
+      "id": "C19",
+      "rule": "Numbers compare to within 0.001; ages in days and weeks use 365.2425 and 52.1775 per year (pseudonym.parse_dicom_age).",
+      "why": "Lengths and angles are stored as computed; parameters are rounded to 0.001."
+    },
+    {
+      "id": "C20",
+      "rule": "A source's checks have object_key = its source_id as text.",
+      "why": "IndexSQL.merge copies cat_checks.object_ref for sources."
+    }
+  ],
+  "totals": {
+    "without_features": {"patients": 38, "studies": 44, "series": 129, "pairs": 6},
+    "with_non_utf8_names": {"patients": 38, "studies": 44, "series": 130, "pairs": 6}
+  },
+  "sources": {
+    "1": {
+      "checks": [
+        {
+          "code": "check.not_dicom",
+          "params": {"count": 7},
+          "why": "junk/README.txt, empty.dat, random.bin, report.pdf, short.dcm (100 bytes), raw_dataset.dcm (no preamble) and nifti/garbage.nii. .DS_Store, Thumbs.db, desktop.ini, ._IM0001.dcm and the files in .Spotlight-V100, .Trashes, .fseventsd, .TemporaryItems and .DocumentRevisions-V100 are skipped without a row."
+        },
+        {
+          "code": "check.archives_skipped",
+          "params": {"count": 6},
+          "why": "export.zip, series.tar, notes.txt.gz, backup.7z, backup.rar, and nifti/broken.nii.gz, a gzip that is no NIfTI (C15)."
+        },
+        {
+          "code": "check.symlinks_skipped",
+          "params": {"count": 2},
+          "why": "junk/link_to_slice.dcm and junk/loop (a link to ..)."
+        },
+        {
+          "code": "check.unreadable_files",
+          "params": {"count": 2, "by_code": {"read.invalid_dicom": 2}},
+          "unless": "permissions",
+          "why": "junk/cut_meta.dcm, cut inside its file meta, and junk/dicm_garbage.dcm, the preamble and DICM followed by no dataset (C14)."
+        },
+        {
+          "code": "check.unreadable_files",
+          "params": {"count": 3, "by_code": {"read.invalid_dicom": 2, "read.permission_denied": 1}},
+          "requires": "permissions",
+          "why": "The two above and junk/locked_file.dcm (mode 000)."
+        },
+        {
+          "code": "check.bad_dirs",
+          "params": {"count": 1},
+          "requires": "permissions",
+          "why": "junk/locked_dir (mode 000)."
+        }
+      ]
+    },
+    "2": {"checks": []}
+  },
+  "project_checks": [],
+  "catalog": {
+    "files_by_kind": {
+      "1": {
+        "image": 1740,
+        "non_image": 2,
+        "dicomdir": 2,
+        "nifti": 6,
+        "not_dicom": 7,
+        "unreadable": 2,
+        "archive": 6,
+        "symlink": 2
+      },
+      "2": {"image": 10}
+    },
+    "files_by_kind_with": {
+      "non_utf8_names": {"1": {"image": 3}},
+      "permissions": {"1": {"unreadable": 1}}
+    },
+    "pixel_data": {"1": {"truncated": 3, "missing": 1}},
+    "why": "Image files by folder: selection 999 (thin_thick 153, coverage 112, kernel 200, kernel_not_sharp, warnings, series_number, tie and multiphase 100 each, description 15, image_type 19), splits 76, geometry 84, pixels 150, syntaxes 42, duplicates 116, enhanced 4, petct 130, identity 33, anonymous 62, canary 3, kernels 30, dicomdir 8, nfd 3; 1 740. Non-image: the dose report and the split SR. Truncated: two in pixels and the losing copy in duplicates/copy_a; missing: one. A deflated file's pixel state is not asserted."
+  },
+  "scenarios": [
+    {
+      "name": "selection.thin_thick",
+      "folders": ["source1/selection/thin_thick"],
+      "covers": "A localizer, a 1 mm and a 2 mm series over the same 100 mm, a dose report, and an AppleDouble file beside a slice. The thinner of two equal coverages wins.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0001"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 63.0},
+          "identifiers": {
+            "patient_id": "SEL-0001",
+            "accession_numbers": ["SEL0001A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Thorax"},
+              "fields": {"study_date": "2024-03-01", "age_years": 63.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Topogram 0.6 T20s"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 1,
+                    "slice_count": 1,
+                    "z_extent_mm": 0.0,
+                    "orientation": "coronal",
+                    "slice_thickness_mm": null,
+                    "kernel_class": "unknown",
+                    "series_number": 1
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.image_type_value",
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.not_axial",
+                      "select.excluded.description",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {
+                      "value": "LOCALIZER",
+                      "orientation": "orientation.coronal",
+                      "term": "topogram",
+                      "count": 1,
+                      "minimum": 50
+                    }
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 1, "minimum": 50}}
+                  ],
+                  "why": "ORIGINAL\\PRIMARY\\LOCALIZER: LOCALIZER is an excluded value and no value from 2 on is AXIAL. The coronal normal (0, 1, 0) has n_z = 0. One position: no spacing, so no thickness to fall back to. T20s is in no kernel list."
+                },
+                {
+                  "match": {"description": "Thorax 1.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 101,
+                    "slice_count": 101,
+                    "z_extent_mm": 100.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 1.0,
+                    "slice_spacing_mm": 1.0,
+                    "kernel": "Br40d",
+                    "kernel_class": "soft",
+                    "series_number": 2
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.thinnest"],
+                    "params": {"thickness": 1.0}
+                  },
+                  "checks": [],
+                  "why": "Both series cover 0 to 100 mm (100.0 each), so coverage ties; 1.0 mm is more than 0.02 mm thinner than 2.0 mm."
+                },
+                {
+                  "match": {"description": "Thorax 2.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 51,
+                    "slice_count": 51,
+                    "z_extent_mm": 100.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 2.0,
+                    "slice_spacing_mm": 2.0,
+                    "kernel": "Br40d",
+                    "kernel_class": "soft",
+                    "series_number": 3
+                  },
+                  "selection": {"auto_rank": 2, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {
+                    "outcome": "eligible",
+                    "codes": ["select.eligible.thicker"],
+                    "params": {"thickness": 2.0, "chosen_thickness": 1.0}
+                  },
+                  "checks": []
+                },
+                {
+                  "match": {"description": "Dose Report"},
+                  "fields": {
+                    "modality": "SR",
+                    "image_count": 1,
+                    "slice_count": null,
+                    "z_extent_mm": null,
+                    "orientation": null,
+                    "series_number": 990
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.not_image",
+                      "select.excluded.not_ct",
+                      "select.excluded.image_type_missing",
+                      "select.excluded.no_geometry",
+                      "select.excluded.description"
+                    ],
+                    "params": {"modality": "SR", "term": "dose report"}
+                  },
+                  "checks": [],
+                  "why": "An X-Ray Radiation Dose SR: every failing condition is listed. A non-image part gets no geometry checks (C2) and, without a slice count, no too_few_slices (C1)."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "selection.coverage",
+      "folders": ["source1/selection/coverage"],
+      "covers": "A 300 mm abdomen against a thinner 100 mm liver series: coverage decides before thickness. The abdomen numbers every slice as its own acquisition, which is no reason to split because no position repeats.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0002"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 58.0},
+          "identifiers": {
+            "patient_id": "SEL-0002",
+            "accession_numbers": ["SEL0002A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Abdomen"},
+              "fields": {"study_date": "2024-03-02", "age_years": 58.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Abdomen 5.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 61,
+                    "slice_count": 61,
+                    "z_extent_mm": 300.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 5.0,
+                    "slice_spacing_mm": 5.0,
+                    "kernel_class": "soft",
+                    "series_number": 2
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.coverage"],
+                    "params": {"coverage": 300.0}
+                  },
+                  "checks": [],
+                  "why": "61 slices from -300 to 0 mm in 5 mm steps: 300 mm. The liver covers -150 to -50 mm, 100 mm, which is below 300 - 1.0."
+                },
+                {
+                  "match": {"description": "Liver 2.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 51,
+                    "slice_count": 51,
+                    "z_extent_mm": 100.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 2.0,
+                    "kernel_class": "soft",
+                    "series_number": 3
+                  },
+                  "selection": {"auto_rank": 2, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {
+                    "outcome": "eligible",
+                    "codes": ["select.eligible.coverage"],
+                    "params": {"coverage": 100.0, "chosen_coverage": 300.0}
+                  },
+                  "checks": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "selection.kernel",
+      "folders": ["source1/selection/kernel"],
+      "covers": "Four equal series that differ in kernel only: soft, unknown, missing and sharp.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0003"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 71.0},
+          "identifiers": {
+            "patient_id": "SEL-0003",
+            "accession_numbers": ["SEL0003A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Abdomen Kernels"},
+              "fields": {"study_date": "2024-03-03", "age_years": 71.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Abdomen 3.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 3.0,
+                    "kernel": "Br40d",
+                    "kernel_class": "soft",
+                    "series_number": 3
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.kernel"],
+                    "params": {"kernel": "Br40d"}
+                  },
+                  "checks": [],
+                  "why": "All four cover 0 to 147 mm at 3 mm. Br40d is Siemens br40 plus the suffix d: soft, and the only soft one, so it wins at step 3."
+                },
+                {
+                  "match": {"description": "Abdomen 3.0 Bv38"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel": "Bv38",
+                    "kernel_class": "unknown",
+                    "series_number": 4
+                  },
+                  "selection": {"auto_rank": 2, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {
+                    "outcome": "eligible",
+                    "codes": ["select.eligible.kernel_unknown"],
+                    "params": {"kernel": "Bv38"}
+                  },
+                  "checks": [],
+                  "why": "bv38 is in no list (bv36 and bv40 are soft): unknown. Rank 2 over the missing kernel, which is unknown too, by series number 4 < 5. Every eligible reason names the step of the first cascade: kernel."
+                },
+                {
+                  "match": {"description": "Abdomen 3.0 No Kernel"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel": null,
+                    "kernel_class": "unknown",
+                    "series_number": 5
+                  },
+                  "selection": {"auto_rank": 3, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {
+                    "outcome": "eligible",
+                    "codes": ["select.eligible.kernel_missing"],
+                    "params": {}
+                  },
+                  "checks": []
+                },
+                {
+                  "match": {"description": "Abdomen 3.0 Br64"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel": "Br64d",
+                    "kernel_class": "sharp",
+                    "series_number": 2
+                  },
+                  "selection": {"auto_rank": 4, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {
+                    "outcome": "eligible",
+                    "codes": ["select.eligible.kernel_sharp"],
+                    "params": {"kernel": "Br64d"}
+                  },
+                  "checks": [],
+                  "why": "Br64d is Siemens br64 plus d: sharp, so last although its series number is the lowest."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "selection.kernel_not_sharp",
+      "folders": ["source1/selection/kernel_not_sharp"],
+      "covers": "An unknown kernel against a sharp one: it wins, and the reason must not call it soft.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0010"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 54.0},
+          "identifiers": {
+            "patient_id": "SEL-0010",
+            "accession_numbers": ["SEL0010A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Thorax Kernels"},
+              "fields": {"study_date": "2024-03-10", "age_years": 54.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Thorax 3.0 Bv38"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "unknown",
+                    "series_number": 3
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.kernel_not_sharp"],
+                    "params": {}
+                  },
+                  "checks": []
+                },
+                {
+                  "match": {"description": "Thorax 3.0 Br64"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "sharp",
+                    "series_number": 2
+                  },
+                  "selection": {"auto_rank": 2, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {
+                    "outcome": "eligible",
+                    "codes": ["select.eligible.kernel_sharp"],
+                    "params": {"kernel": "Br64d"}
+                  },
+                  "checks": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "selection.warnings",
+      "folders": ["source1/selection/warnings"],
+      "covers": "Two equal series, one without rescale slope and intercept: the warning decides.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0004"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 66.0},
+          "identifiers": {
+            "patient_id": "SEL-0004",
+            "accession_numbers": ["SEL0004A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Abdomen Warnings"},
+              "fields": {"study_date": "2024-03-04", "age_years": 66.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Abdomen B 3.0 B30f"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 3
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.fewer_warnings"],
+                    "params": {}
+                  },
+                  "checks": [],
+                  "why": "B30f is Siemens b30 plus f: soft, like A's. Coverage, thickness, kernel and ImageType tie; A has one warning-level check, B none."
+                },
+                {
+                  "match": {"description": "Abdomen A 3.0 B30f"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 2
+                  },
+                  "selection": {"auto_rank": 2, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {
+                    "outcome": "eligible",
+                    "codes": ["select.eligible.warnings"],
+                    "params": {"count": 1, "chosen_count": 0}
+                  },
+                  "checks": [{"code": "check.no_rescale", "params": {}}]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "selection.series_number",
+      "folders": ["source1/selection/series_number"],
+      "covers": "Two equal series: the lower series number decides, whatever the folder order.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0005"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 49.0},
+          "identifiers": {
+            "patient_id": "SEL-0005",
+            "accession_numbers": ["SEL0005A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Thorax Numbers"},
+              "fields": {"study_date": "2024-03-05", "age_years": 49.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Thorax B 3.0 B31f"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 6
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.series_number"],
+                    "params": {"number": 6}
+                  },
+                  "checks": []
+                },
+                {
+                  "match": {"description": "Thorax A 3.0 B31f"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 7
+                  },
+                  "selection": {"auto_rank": 2, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {
+                    "outcome": "eligible",
+                    "codes": ["select.eligible.series_number"],
+                    "params": {}
+                  },
+                  "checks": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "selection.tie",
+      "folders": ["source1/selection/tie"],
+      "covers": "Two series equal in everything, series number included: the series UID decides.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0006"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 52.0},
+          "identifiers": {
+            "patient_id": "SEL-0006",
+            "accession_numbers": ["SEL0006A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Thorax Tie"},
+              "fields": {"study_date": "2024-03-06", "age_years": 52.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Thorax B 3.0 I30f"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 8
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {"outcome": "chosen", "codes": ["select.chosen.tie"], "params": {}},
+                  "checks": [],
+                  "why": "I30f is Siemens i30 plus f: soft. Both are number 8. B's series UID sorts first as a string; test_corpus.py holds that fact of the generator."
+                },
+                {
+                  "match": {"description": "Thorax A 3.0 I30f"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 8
+                  },
+                  "selection": {"auto_rank": 2, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {"outcome": "eligible", "codes": ["select.eligible.tie"], "params": {}},
+                  "checks": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "selection.multiphase",
+      "folders": ["source1/selection/multiphase"],
+      "covers": "One series UID holding two phases at the same 50 positions, told apart by AcquisitionNumber: split at step e, and the parts tie up to the part number.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0007"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 77.0},
+          "identifiers": {
+            "patient_id": "SEL-0007",
+            "accession_numbers": ["SEL0007A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Liver Multiphase"},
+              "fields": {"study_date": "2024-03-07", "age_years": 77.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Liver 3Phase 3.0 B30f", "part": 0},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 4
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {"outcome": "chosen", "codes": ["select.chosen.part"], "params": {}},
+                  "checks": [{"code": "check.split", "params": {"reason": "acquisition"}}],
+                  "why": "Both parts start at z = 0; part 0 is the one with the lower InstanceNumbers (1-50, acquisition 1). Equal in everything else, and they share the series UID, so step 8 decides."
+                },
+                {
+                  "match": {"description": "Liver 3Phase 3.0 B30f", "part": 1},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 4
+                  },
+                  "selection": {"auto_rank": 2, "auto_selected": 0, "selected": 0, "is_primary": 0},
+                  "reason": {"outcome": "eligible", "codes": ["select.eligible.part"], "params": {}},
+                  "checks": [{"code": "check.split", "params": {"reason": "acquisition"}}]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "selection.description",
+      "folders": ["source1/selection/description"],
+      "covers": "Description terms: short terms match whole tokens only (MPR, MIP, 3D), so \"Compressed\" passes; \"Cor\" is no term (ADR 0023). Three slices each, so every part is also too short and the study has nothing eligible.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0008"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 44.0},
+          "identifiers": {
+            "patient_id": "SEL-0008",
+            "accession_numbers": ["SEL0008A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Description Terms"},
+              "fields": {"study_date": "2024-03-08", "age_years": 44.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Thorax MPR 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.description", "select.excluded.too_few_slices"],
+                    "params": {"term": "mpr", "count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Abdomen Compressed 1.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 3
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "\"compressed\" contains m-p-r, but mpr has three letters and matches whole tokens only."
+                },
+                {
+                  "match": {"description": "Thorax_Cor 1.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 4
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "cor is not a default term: an axial series named for the heart stays eligible (ADR 0023, rejected alternatives)."
+                },
+                {
+                  "match": {"description": "Thorax MIP 10mm"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 5
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.image_type_value",
+                      "select.excluded.description",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"value": "MIP", "term": "mip", "count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Abdomen 3D 1.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 6
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.description", "select.excluded.too_few_slices"],
+                    "params": {"term": "3d", "count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "selection.image_type",
+      "folders": ["source1/selection/image_type"],
+      "covers": "The ImageType rule: missing, an unknown value 0, two values, VOLUME in a classic CT, DERIVED\\PRIMARY\\REFORMATTED, DERIVED\\SECONDARY\\AXIAL and a Secondary Capture screen save.",
+      "patients": [
+        {
+          "match": {"patient_id": "SEL-0009"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 39.0},
+          "identifiers": {
+            "patient_id": "SEL-0009",
+            "accession_numbers": ["SEL0009A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Image Types"},
+              "fields": {"study_date": "2024-03-09", "age_years": 39.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "No Image Type"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.image_type_missing",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Value0 Unknown"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 3
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.not_original", "select.excluded.too_few_slices"],
+                    "params": {"first_value": "UNKNOWN", "count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Two Values"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 4
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Classic Volume"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 5
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Reformatted"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 6
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.image_type_value",
+                      "select.excluded.derived",
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"value": "REFORMATTED", "count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "VOLUME stands in for AXIAL only in Enhanced and Legacy Converted CT, so Classic Volume fails the plane rule; Reformatted fails three conditions."
+                },
+                {
+                  "match": {"description": "Secondary Axial"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 7
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.image_type_value",
+                      "select.excluded.derived",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"value": "SECONDARY", "count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Screen Save"},
+                  "fields": {
+                    "modality": "OT",
+                    "image_count": 1,
+                    "slice_count": null,
+                    "z_extent_mm": null,
+                    "orientation": null,
+                    "series_number": 9
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.secondary_capture",
+                      "select.excluded.not_ct",
+                      "select.excluded.image_type_value",
+                      "select.excluded.derived",
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.no_geometry",
+                      "select.excluded.description"
+                    ],
+                    "params": {"modality": "OT", "value": "SECONDARY", "term": "screen save"}
+                  },
+                  "checks": [{"code": "check.no_geometry", "params": {}}],
+                  "why": "A Secondary Capture is an image storage class, so not not_image. SECONDARY (value 1) is the first excluded value in ImageType order, before SCREEN SAVE (C4). No orientation or position: no geometry (C2)."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "splits",
+      "folders": ["source1/splits"],
+      "covers": "Every split reason of ADR 0022 decision 9 that a classic series can have (SOP class, orientation, matrix, pixel spacing, acquisition, phase, echo), and the near misses that must not split.",
+      "patients": [
+        {
+          "match": {"patient_id": "SPLIT-0001"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 55.0},
+          "identifiers": {
+            "patient_id": "SPLIT-0001",
+            "accession_numbers": ["SPL0001A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Split Reasons"},
+              "fields": {"study_date": "2024-04-01", "age_years": 55.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Split SOP Class", "modality": "CT"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "sop_class"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ],
+                  "why": "Four CT slices and a Comprehensive SR under one series UID: step a. Which part is 0 is not asserted, since the SR has no position to sort by (C9)."
+                },
+                {
+                  "match": {"description": "Split SOP Class", "modality": "SR"},
+                  "fields": {
+                    "modality": "SR",
+                    "image_count": 1,
+                    "slice_count": null,
+                    "z_extent_mm": null,
+                    "orientation": null,
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.not_image",
+                      "select.excluded.not_ct",
+                      "select.excluded.image_type_missing",
+                      "select.excluded.no_geometry"
+                    ],
+                    "params": {"modality": "SR"}
+                  },
+                  "checks": [{"code": "check.split", "params": {"reason": "sop_class"}}]
+                },
+                {
+                  "match": {"description": "Split Orientation", "orientation": "axial"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 3
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "orientation"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ],
+                  "why": "Four axial and four coronal slices: the normals differ by 90°, step b."
+                },
+                {
+                  "match": {"description": "Split Orientation", "orientation": "coronal"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "coronal",
+                    "series_number": 3
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.not_axial", "select.excluded.too_few_slices"],
+                    "params": {"orientation": "orientation.coronal", "count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "orientation"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Split Size", "image_rows": 16},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 4,
+                    "image_rows": 16,
+                    "image_columns": 16
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "size"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ],
+                  "why": "16 x 16 and 20 x 20 at the same positions: step c."
+                },
+                {
+                  "match": {"description": "Split Size", "image_rows": 20},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 4,
+                    "image_rows": 20,
+                    "image_columns": 20
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "size"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Split Pixel Spacing", "pixel_spacing_mm": 0.7},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 5,
+                    "pixel_spacing_mm": 0.7
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "pixel_spacing"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ],
+                  "why": "0.75 / 0.7 = 1.071, more than 1 % apart: step d."
+                },
+                {
+                  "match": {"description": "Split Pixel Spacing", "pixel_spacing_mm": 0.75},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 5,
+                    "pixel_spacing_mm": 0.75
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "pixel_spacing"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "No Split Spacing"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 8,
+                    "slice_count": 8,
+                    "z_extent_mm": 21.0,
+                    "orientation": "axial",
+                    "series_number": 6
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 8, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 8, "minimum": 50}}
+                  ],
+                  "why": "0.704 / 0.7 = 1.0057, within 1 %: one part. Its pixel spacing is either value and is not asserted."
+                },
+                {
+                  "match": {"description": "Split Acquisition", "part": 0},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 7
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "acquisition"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ],
+                  "why": "The same four positions twice; the tag that differs separates the repeats: step e, reason acquisition (acquisition, phase or echo). Part 0 holds the lower InstanceNumbers."
+                },
+                {
+                  "match": {"description": "Split Acquisition", "part": 1},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 7
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "acquisition"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Split Temporal Position", "part": 0},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 8
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "acquisition"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ],
+                  "why": "The same four positions twice; the tag that differs separates the repeats: step e, reason acquisition (acquisition, phase or echo). Part 0 holds the lower InstanceNumbers."
+                },
+                {
+                  "match": {"description": "Split Temporal Position", "part": 1},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 8
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "acquisition"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Split Echo", "part": 0},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 9
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "acquisition"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ],
+                  "why": "The same four positions twice; the tag that differs separates the repeats: step e, reason acquisition (acquisition, phase or echo). Part 0 holds the lower InstanceNumbers."
+                },
+                {
+                  "match": {"description": "Split Echo", "part": 1},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 4,
+                    "slice_count": 4,
+                    "z_extent_mm": 9.0,
+                    "orientation": "axial",
+                    "series_number": 9
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 4, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "acquisition"}},
+                    {"code": "check.too_few_slices", "params": {"count": 4, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "No Split Acquisition"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 8,
+                    "slice_count": 8,
+                    "z_extent_mm": 21.0,
+                    "orientation": "axial",
+                    "series_number": 10
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 8, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 8, "minimum": 50}}
+                  ],
+                  "why": "AcquisitionNumber 1 to 8, but no position repeats: step e does not apply."
+                },
+                {
+                  "match": {"description": "Duplicate Positions"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 8,
+                    "slice_count": 7,
+                    "z_extent_mm": 18.0,
+                    "orientation": "axial",
+                    "slice_spacing_mm": 3.0,
+                    "series_number": 11
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 7, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.duplicate_positions", "params": {"count": 2}},
+                    {"code": "check.too_few_slices", "params": {"count": 7, "minimum": 50}}
+                  ],
+                  "why": "z = 0, 3, 6, 9, 9, 12, 15, 18: eight instances, seven distinct positions; the two at 9 share one. Nothing separates them, so the series is not split."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "geometry",
+      "folders": ["source1/geometry"],
+      "covers": "The geometry checks of ADR 0022 decision 11, one per series: gap, uneven spacing, gantry tilt with shear, a tilt tag without shear, oblique planes on both sides of 18.2°, coronal, sagittal, invalid orientation, missing positions, non-square pixels, varying rescale, a missing kernel and burned-in text.",
+      "patients": [
+        {
+          "match": {"patient_id": "GEO-0001"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 61.0},
+          "identifiers": {
+            "patient_id": "GEO-0001",
+            "accession_numbers": ["GEO0001A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Geometry Checks"},
+              "fields": {"study_date": "2024-04-02", "age_years": 61.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Gap"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 8.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 1.0,
+                    "slice_spacing_mm": 1.0,
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.gap", "params": {"gaps": 1, "missing": 3, "largest_mm": 4.0}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "z = 0, 1, 2, 6, 7, 8: steps 1, 1, 4, 1, 1, median 1. 4 > 1.5 is one gap with floor(4 / 1 + 0.5) - 1 = 3 slices missing; the other steps equal the median. No SliceThickness: the thickness falls back to the spacing."
+                },
+                {
+                  "match": {"description": "Uneven"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 5.25,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 1.0,
+                    "slice_spacing_mm": 1.0,
+                    "series_number": 3
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.uneven_spacing", "params": {"deviation_mm": 0.25}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "z = 0, 1, 2, 3.25, 4.25, 5.25: steps 1, 1, 1.25, 1, 1. 1.25 is no gap (not above 1.5) and differs from the median by 0.25 > max(0.01, 0.01 mm)."
+                },
+                {
+                  "match": {"description": "Gantry Tilt 15"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 14.488887,
+                    "orientation": "axial",
+                    "slice_spacing_mm": 2.897777,
+                    "series_number": 4
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.gantry_tilt", "params": {"degrees": 15.0}},
+                    {"code": "check.oblique", "params": {"degrees": 15.0}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "Columns turned 15° about x: n = (0, sin 15°, cos 15°), still axial (0.966). The table moves along z, so the positions advance 3 cos 15° = 2.898 mm along n, 14.489 mm in all, and the line through them is 15° from n: a shear, so gantry_tilt and not tilt_tag_only. The plane is 15° from axial: oblique."
+                },
+                {
+                  "match": {"description": "Tilt Tag Only"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "axial",
+                    "series_number": 5
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.tilt_tag_only", "params": {"degrees": 12.0}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "GantryDetectorTilt 12 on an upright stack: no shear."
+                },
+                {
+                  "match": {"description": "Oblique 10"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "axial",
+                    "series_number": 6
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.oblique", "params": {"degrees": 10.0}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "Normal 10° from z, positions along the normal: no shear, axial (cos 10° = 0.985), so only its length excludes it."
+                },
+                {
+                  "match": {"description": "Oblique 25"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "oblique",
+                    "series_number": 7
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.not_axial", "select.excluded.too_few_slices"],
+                    "params": {"orientation": "orientation.oblique", "count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.oblique", "params": {"degrees": 25.0}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "cos 25° = 0.906 < 0.95 and sin 25° = 0.423: no standard plane."
+                },
+                {
+                  "match": {"description": "Coronal"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "coronal",
+                    "series_number": 8
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.not_axial", "select.excluded.too_few_slices"],
+                    "params": {"orientation": "orientation.coronal", "count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Sagittal"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "sagittal",
+                    "series_number": 9
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.not_axial", "select.excluded.too_few_slices"],
+                    "params": {"orientation": "orientation.sagittal", "count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Invalid Orientation"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": null,
+                    "z_extent_mm": null,
+                    "orientation": null,
+                    "series_number": 10
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.no_geometry"],
+                    "params": {}
+                  },
+                  "checks": [{"code": "check.no_geometry", "params": {}}],
+                  "why": "The column cosine (0, 0, 0) has length 0: invalid, so no geometry and no slice count (C1)."
+                },
+                {
+                  "match": {"description": "Missing Position"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": null,
+                    "z_extent_mm": null,
+                    "orientation": null,
+                    "series_number": 11
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.no_geometry"],
+                    "params": {}
+                  },
+                  "checks": [{"code": "check.no_geometry", "params": {}}]
+                },
+                {
+                  "match": {"description": "Non Square"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "axial",
+                    "series_number": 12,
+                    "pixel_spacing_mm": 0.7
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.non_square_pixels", "params": {"row_mm": 0.7, "col_mm": 0.8}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "PixelSpacing 0.7 \\ 0.8: 0.1 > 0.01 x 0.7. pixel_spacing_mm is the row spacing."
+                },
+                {
+                  "match": {"description": "Values Vary"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "axial",
+                    "series_number": 13
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.values_vary", "params": {}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "No Kernel"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "axial",
+                    "series_number": 14,
+                    "kernel": null,
+                    "kernel_class": "unknown"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Burned In"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "axial",
+                    "series_number": 15
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.burned_in_annotation", "params": {}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pixel_data",
+      "folders": ["source1/pixels"],
+      "covers": "Pixel data checked without reading pixels (ADR 0022 decision 4): a native file cut inside its pixel data, an encapsulated file without its Sequence Delimitation Item, and a file without a pixel element.",
+      "patients": [
+        {
+          "match": {"patient_id": "PIX-0001"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 68.0},
+          "identifiers": {
+            "patient_id": "PIX-0001",
+            "accession_numbers": ["PIX0001A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Pixel Data"},
+              "fields": {"study_date": "2024-04-03", "age_years": 68.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Truncated Native 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.truncated"],
+                    "params": {"truncated_files": 1}
+                  },
+                  "checks": [{"code": "check.truncated", "params": {"count": 1}}],
+                  "why": "Slice 25 lost its last 256 bytes; its header still reads, so it keeps its position and the part has 50 slices."
+                },
+                {
+                  "match": {"description": "Truncated JPEG-LS 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "series_number": 3,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.4.80"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.truncated"],
+                    "params": {"truncated_files": 1}
+                  },
+                  "checks": [{"code": "check.truncated", "params": {"count": 1}}]
+                },
+                {
+                  "match": {"description": "Missing Pixels 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "series_number": 4
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.missing_pixels"],
+                    "params": {"missing_files": 1}
+                  },
+                  "checks": [{"code": "check.missing_pixel_data", "params": {"count": 1}}]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "transfer_syntaxes",
+      "folders": ["source1/syntaxes"],
+      "covers": "Every transfer syntax pydicom 3.0.2 and imagecodecs 2026.8.16 can write here, three slices each, and a private syntax.",
+      "patients": [
+        {
+          "match": {"patient_id": "TS-0001"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 50.0},
+          "identifiers": {
+            "patient_id": "TS-0001",
+            "accession_numbers": ["TS0001A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Transfer Syntaxes"},
+              "fields": {"study_date": "2024-04-04", "age_years": 50.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Explicit VR Little Endian"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.1"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Implicit VR Little Endian"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 3,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Explicit VR Big Endian"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 4,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.2"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Deflated Explicit VR Little Endian"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 5,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.1.99"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices", "select.excluded.transfer_syntax"],
+                    "params": {"count": 3, "minimum": 50, "syntax": "1.2.840.10008.1.2.1.99"}
+                  },
+                  "checks": [
+                    {
+                      "code": "check.unsupported_transfer_syntax",
+                      "params": {"syntax": "1.2.840.10008.1.2.1.99"}
+                    },
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "The pinned dcm2niix refuses Deflated and JPEG Extended 12-bit and converts the other twelve syntaxes here (ADR 0023 decision 5); an unknown syntax counts as unreadable."
+                },
+                {
+                  "match": {"description": "RLE Lossless"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 6,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.5"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "JPEG Lossless SV1"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 7,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.4.70"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "JPEG Lossless Process 14"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 8,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.4.57"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "JPEG-LS Lossless"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 9,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.4.80"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "JPEG-LS Near-Lossless"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 10,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.4.81"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "JPEG 2000 Lossless"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 11,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.4.90"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "JPEG 2000"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 12,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.4.91"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "JPEG Baseline 8-bit"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 13,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.4.50"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "JPEG Extended 12-bit"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 14,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.4.51"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices", "select.excluded.transfer_syntax"],
+                    "params": {"count": 3, "minimum": 50, "syntax": "1.2.840.10008.1.2.4.51"}
+                  },
+                  "checks": [
+                    {
+                      "code": "check.unsupported_transfer_syntax",
+                      "params": {"syntax": "1.2.840.10008.1.2.4.51"}
+                    },
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Private Syntax"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 15,
+                    "transfer_syntax_uid": "2.25.170455376541867032814933066410407116013"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices", "select.excluded.transfer_syntax"],
+                    "params": {
+                      "count": 3,
+                      "minimum": 50,
+                      "syntax": "2.25.170455376541867032814933066410407116013"
+                    }
+                  },
+                  "checks": [
+                    {
+                      "code": "check.unsupported_transfer_syntax",
+                      "params": {"syntax": "2.25.170455376541867032814933066410407116013"}
+                    },
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "A 2.25 UID made from the seed (\"private-syntax\"); test_corpus.py holds this value to the generator."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "duplicates",
+      "folders": ["source1/duplicates", "source2/dup_sources", "source2/source_two_only"],
+      "covers": "One study across two sources: a series copied into a second folder with one truncated copy, a stray file reusing an instance UID under another series, the same instances Deflated and Explicit, and a series present in both sources.",
+      "patients": [
+        {
+          "match": {"patient_id": "DUP-0001"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 59.0},
+          "identifiers": {
+            "patient_id": "DUP-0001",
+            "accession_numbers": ["DUP0001A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Duplicates"},
+              "fields": {"study_date": "2024-04-05", "age_years": 59.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Dup Folders 3.0 B30f"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 2
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.only_candidate"],
+                    "params": {}
+                  },
+                  "checks": [
+                    {"code": "check.duplicates", "params": {"count": 51}},
+                    {"code": "check.uid_conflict", "params": {"count": 1}}
+                  ],
+                  "why": "100 files for 50 instances: copy_a wins by path except slice 7, whose copy_a file is truncated, so copy_b's complete copy wins. The stray file has slice 12's SOP UID under another series UID; copy_a wins by path, the stray loses (51 losers, C7) and the instance stays here. Only winners count, so nothing is truncated (C8) and the part is the study's only candidate."
+                },
+                {
+                  "match": {"description": "Dup Syntax 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 5,
+                    "slice_count": 5,
+                    "z_extent_mm": 12.0,
+                    "orientation": "axial",
+                    "series_number": 3,
+                    "transfer_syntax_uid": "1.2.840.10008.1.2.1"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 5, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.duplicates", "params": {"count": 5}},
+                    {"code": "check.too_few_slices", "params": {"count": 5, "minimum": 50}}
+                  ],
+                  "why": "The Deflated copies sort first (a_deflated) but the converter cannot read them, so all five Explicit copies win and the part has no transfer_syntax exclusion."
+                },
+                {
+                  "match": {"description": "Dup Sources 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 5,
+                    "slice_count": 5,
+                    "z_extent_mm": 12.0,
+                    "orientation": "axial",
+                    "series_number": 4
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 5, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.duplicates", "params": {"count": 5}},
+                    {"code": "check.too_few_slices", "params": {"count": 5, "minimum": 50}}
+                  ],
+                  "why": "The same five files in source 1 and source 2: the lower source wins."
+                },
+                {
+                  "match": {"description": "Source Two Only 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 5,
+                    "slice_count": 5,
+                    "z_extent_mm": 12.0,
+                    "orientation": "axial",
+                    "series_number": 5
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 5, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 5, "minimum": 50}}
+                  ]
+                }
+              ],
+              "why": "\"Stray Conflict\" is not a part: its only file lost its instance to Dup Folders."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "enhanced",
+      "folders": ["source1/enhanced"],
+      "covers": "Enhanced CT: a 50-frame volume with ImageType ORIGINAL\\PRIMARY\\VOLUME, two files of one series with StackID 1 and 2, and a file whose frames mix axial and coronal.",
+      "patients": [
+        {
+          "match": {"patient_id": "ENH-0001"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 57.0},
+          "identifiers": {
+            "patient_id": "ENH-0001",
+            "accession_numbers": ["ENH0001A", "ENH0001B", "ENH0001C"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Enhanced Single"},
+              "fields": {"study_date": "2024-04-06", "age_years": 57.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Enhanced Volume 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 3.0,
+                    "series_number": 2,
+                    "sop_class_uid": "1.2.840.10008.5.1.4.1.1.2.1"
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.only_candidate"],
+                    "params": {}
+                  },
+                  "checks": [],
+                  "why": "Each frame is an instance (image_count 50). VOLUME passes the plane rule for Enhanced CT. Thickness and rescale come from the functional groups, so no check.no_rescale (C12)."
+                }
+              ]
+            },
+            {
+              "match": {"description": "CT Enhanced Stacks"},
+              "fields": {"study_date": "2024-04-07", "age_years": 57.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Enhanced Stacks 3.0", "part": 0},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 5,
+                    "slice_count": 5,
+                    "z_extent_mm": 12.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 5, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "stack"}},
+                    {"code": "check.too_few_slices", "params": {"count": 5, "minimum": 50}}
+                  ],
+                  "why": "Two files at the same five positions; no acquisition tag separates them, StackID does: step f. A file is never split, so each part is one file; part 0 is the file with InstanceNumber 1."
+                },
+                {
+                  "match": {"description": "Enhanced Stacks 3.0", "part": 1},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 5,
+                    "slice_count": 5,
+                    "z_extent_mm": 12.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 5, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.split", "params": {"reason": "stack"}},
+                    {"code": "check.too_few_slices", "params": {"count": 5, "minimum": 50}}
+                  ]
+                }
+              ]
+            },
+            {
+              "match": {"description": "CT Enhanced Mixed"},
+              "fields": {"study_date": "2024-04-08", "age_years": 57.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Enhanced Mixed 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 52,
+                    "series_number": 2,
+                    "slice_count": null,
+                    "z_extent_mm": null,
+                    "slice_spacing_mm": null,
+                    "orientation": null
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.no_geometry", "select.excluded.mixed_frames"],
+                    "params": {}
+                  },
+                  "checks": [
+                    {"code": "check.enhanced_mixed_frames", "params": {}},
+                    {"code": "check.no_geometry", "params": {}}
+                  ],
+                  "why": "50 axial and 2 coronal frames in one file, which is never split. ADR 0028 decision 3: such a part has no geometry, so nothing of it is measured, and both codes exclude it (C12)."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pet_ct",
+      "folders": ["source1/petct"],
+      "covers": "A PET/CT study: Siemens' low-dose CT (DERIVED\\CT_SOM5 SPI\\PRIMARY\\AXIAL), an original CT, PET with and without attenuation correction and without CorrectedImage, a PET in another Frame of Reference without dose, weight or decay correction, and a PET that does not overlap the CT.",
+      "patients": [
+        {
+          "match": {"patient_id": "PET-0001"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 64.0},
+          "identifiers": {
+            "patient_id": "PET-0001",
+            "accession_numbers": ["PET0001A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "PET-CT Whole Body"},
+              "fields": {"study_date": "2024-05-10", "age_years": 64.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "CT WB 5.0 B30f LowDose"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 245.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 5.0,
+                    "kernel_class": "soft",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.derived"],
+                    "params": {}
+                  },
+                  "checks": [],
+                  "why": "Value 0 is DERIVED and accept_derived_primary is off (OPEN_QUESTIONS #24)."
+                },
+                {
+                  "match": {"description": "CT WB 5.0 Br38f"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 245.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 5.0,
+                    "kernel_class": "soft",
+                    "series_number": 3
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.only_candidate"],
+                    "params": {}
+                  },
+                  "checks": []
+                },
+                {
+                  "match": {"description": "PET WB AC"},
+                  "fields": {
+                    "modality": "PT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 200.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 4.0,
+                    "series_number": 4
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.not_ct",
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"modality": "PT", "count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "ImageType ORIGINAL\\PRIMARY has no plane value. 6 slices from -240 to -40 mm in 40 mm steps: 200 mm."
+                },
+                {
+                  "match": {"description": "PET WB NAC"},
+                  "fields": {
+                    "modality": "PT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 200.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 4.0,
+                    "series_number": 5
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.not_ct",
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"modality": "PT", "count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.pet_not_attenuation_corrected", "params": {}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "PET WB No CorrectedImage"},
+                  "fields": {
+                    "modality": "PT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 200.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 4.0,
+                    "series_number": 6
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.not_ct",
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"modality": "PT", "count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "Without CorrectedImage nothing is known about the correction: the pair holds NULL and no check is raised (C13)."
+                },
+                {
+                  "match": {"description": "PET Other FoR"},
+                  "fields": {
+                    "modality": "PT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 200.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 4.0,
+                    "series_number": 7
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.not_ct",
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"modality": "PT", "count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.pet_units", "params": {"units": "CNTS"}},
+                    {"code": "check.pet_no_dose", "params": {}},
+                    {"code": "check.pet_no_weight", "params": {}},
+                    {"code": "check.pet_not_decay_corrected", "params": {"value": "NONE"}},
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "PET Far"},
+                  "fields": {
+                    "modality": "PT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 50.0,
+                    "orientation": "axial",
+                    "slice_thickness_mm": 4.0,
+                    "series_number": 8
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": [
+                      "select.excluded.not_ct",
+                      "select.excluded.not_axial_image_type",
+                      "select.excluded.too_few_slices"
+                    ],
+                    "params": {"modality": "PT", "count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "z = 100 to 150 mm against the CT's -245 to 0 mm: no overlap, no pair."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "identity",
+      "folders": ["source1/identity"],
+      "covers": "One PatientID written NFC and, with a leading space, NFD; PatientAge against the birth date; a birth on 29 February; ages in days, weeks and months; a study whose files carry two PatientIDs; and one with two issuers.",
+      "patients": [
+        {
+          "match": {"patient_id": "PAT-É01"},
+          "fields": {"id_status": "dicom", "sex": null, "age_at_first_study": 60.0},
+          "identifiers": {
+            "patient_id": "PAT-É01",
+            "accession_numbers": ["IDN0001", "IDN0002"],
+            "id_source": "dicom"
+          },
+          "checks": [
+            {"code": "check.sex_conflict", "params": {"values": {"set": ["F", "M"]}}},
+            {"code": "check.age_inconsistent", "params": {"studies": 2}}
+          ],
+          "studies": [
+            {
+              "match": {"description": "CT Identity One"},
+              "fields": {"study_date": "2021-05-04", "age_years": 60.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Identity One 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ]
+            },
+            {
+              "match": {"description": "CT Identity Two"},
+              "fields": {"study_date": "2023-05-04", "age_years": 50.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Identity Two 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ]
+            }
+          ],
+          "why": "\" PAT-E\\u0301\" \"01\" stripped and NFC is \"PAT-\\u00c901\": one link, one patient. F and M disagree, so sex stays empty. 60 years in 2021 and 50 in 2023 imply births 12 years apart (> 1.5). Nothing is selected, so the age is the first dated study's."
+        },
+        {
+          "match": {"patient_id": "AGE-0001"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 58.0},
+          "identifiers": {
+            "patient_id": "AGE-0001",
+            "accession_numbers": ["AGE0001A", "AGE0001B"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Age Conflict"},
+              "fields": {"study_date": "2024-06-01", "age_years": 60.0, "selection_mode": "auto"},
+              "checks": [
+                {"code": "check.age_conflict", "params": {}},
+                {"code": "check.no_eligible_series", "params": {}}
+              ],
+              "parts": [
+                {
+                  "match": {"description": "Age Conflict 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ],
+              "why": "PatientAge 060Y; born 1966-08-15, so 57 completed years on 2024-06-01: 3 > 1 apart. PatientAge wins."
+            },
+            {
+              "match": {"description": "CT Age Leap Day"},
+              "fields": {"study_date": "2023-02-28", "age_years": 58.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Age Leap Day 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ],
+              "why": "Born 1964-02-29: on 2023-02-28 the 59th birthday (1 March in a common year) has not come, so 58."
+            }
+          ],
+          "why": "Implied births 2024-06-01 - 60 x 365.2425 d and 2023-02-28 - 58 x 365.2425 d are 271 days apart: no age_inconsistent. The first dated study is the leap day's, 58."
+        },
+        {
+          "match": {"patient_id": "AGE-D"},
+          "fields": {"id_status": "dicom", "sex": null, "age_at_first_study": 0.05749604714675866},
+          "identifiers": {"patient_id": "AGE-D", "accession_numbers": [], "id_source": "dicom"},
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Age Days"},
+              "fields": {
+                "study_date": "2024-06-02",
+                "age_years": 0.05749604714675866,
+                "selection_mode": "auto"
+              },
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Age Days 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ],
+              "why": "021D = 21 / 365.2425 years; sex U is no sex."
+            }
+          ]
+        },
+        {
+          "match": {"patient_id": "AGE-W"},
+          "fields": {"id_status": "dicom", "sex": "O", "age_at_first_study": 0.11499209429351731},
+          "identifiers": {"patient_id": "AGE-W", "accession_numbers": [], "id_source": "dicom"},
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Age Weeks"},
+              "fields": {
+                "study_date": "2024-06-03",
+                "age_years": 0.11499209429351731,
+                "selection_mode": "auto"
+              },
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Age Weeks 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ],
+              "why": "006W = 6 / 52.1775 years."
+            }
+          ]
+        },
+        {
+          "match": {"patient_id": "AGE-M"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 1.5},
+          "identifiers": {"patient_id": "AGE-M", "accession_numbers": [], "id_source": "dicom"},
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Age Months"},
+              "fields": {"study_date": "2024-06-04", "age_years": 1.5, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Age Months 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "match": {"patient_id": "CONF-A1"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 45.0},
+          "identifiers": {
+            "patient_id": "CONF-A1",
+            "accession_numbers": ["CONF0001"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Patient Conflict"},
+              "fields": {"study_date": "2024-06-05", "age_years": 45.0, "selection_mode": "auto"},
+              "checks": [
+                {"code": "check.study_patient_conflict", "params": {"count": 2}},
+                {"code": "check.no_eligible_series", "params": {}}
+              ],
+              "parts": [
+                {
+                  "match": {"description": "Conflict 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ]
+                }
+              ],
+              "why": "Four files say CONF-A1 and two CONF-B2: the study takes the most frequent link. CONF-B2 gets no patient of its own."
+            }
+          ]
+        },
+        {
+          "match": {"patient_id": "ISS-0001"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 47.0},
+          "identifiers": {
+            "patient_id": "ISS-0001",
+            "accession_numbers": ["ISS0001"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Issuer Conflict"},
+              "fields": {"study_date": "2024-06-06", "age_years": 47.0, "selection_mode": "auto"},
+              "checks": [
+                {"code": "check.issuer_conflict", "params": {"count": 2}},
+                {"code": "check.no_eligible_series", "params": {}}
+              ],
+              "parts": [
+                {
+                  "match": {"description": "Issuer 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 6,
+                    "slice_count": 6,
+                    "z_extent_mm": 15.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "anonymous",
+      "folders": ["source1/CASE_017", "source1/CASE_018", "source1/CASE_019", "source1/CASE_020"],
+      "covers": "Anonymized studies directly below the source root: ANONYMOUS twice in one case folder, an empty PatientID, a lower-case placeholder and no PatientID element. Each is a patient of its own until the user confirms a folder level.",
+      "patients": [
+        {
+          "match": {"study_description": "CT Anon 017 A"},
+          "fields": {"id_status": "unconfirmed", "sex": "F", "age_at_first_study": 40.0},
+          "identifiers": null,
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Anon 017 A"},
+              "fields": {"study_date": "2019-03-01", "age_years": 40.0, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"description": "Anon 017a 3.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 50,
+                    "slice_count": 50,
+                    "z_extent_mm": 147.0,
+                    "orientation": "axial",
+                    "kernel_class": "soft",
+                    "series_number": 2
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 0, "is_primary": 0},
+                  "reason": {
+                    "outcome": "held",
+                    "codes": ["select.held.unconfirmed_patient"],
+                    "params": {}
+                  },
+                  "checks": [],
+                  "why": "Eligible and ranked first by the worker (select.chosen.only_candidate); the merge deselects it because the patient is unconfirmed, and its reason says held (C6)."
+                }
+              ],
+              "catalog": {
+                "pid_state": "placeholder",
+                "candidate_labels": {"1": "CASE_017", "2": "2019", "3": "CT"},
+                "candidate_levels": [0, 1, 2, 3]
+              }
+            }
+          ],
+          "why": "ANONYMOUS is a placeholder: no link, folder candidates at levels 0-3, so unconfirmed. Without a link, 017 A and 017 B are two patients until confirmed. No identifiers row for an unconfirmed patient."
+        },
+        {
+          "match": {"study_description": "CT Anon 017 B"},
+          "fields": {"id_status": "unconfirmed", "sex": "F", "age_at_first_study": 40.0},
+          "identifiers": null,
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Anon 017 B"},
+              "fields": {"study_date": "2020-03-01", "age_years": 40.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Anon 017b 3.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ],
+              "catalog": {
+                "pid_state": "placeholder",
+                "candidate_labels": {"1": "CASE_017", "2": "2020", "3": "CT"},
+                "candidate_levels": [0, 1, 2, 3]
+              }
+            }
+          ]
+        },
+        {
+          "match": {"study_description": "CT Anon 018"},
+          "fields": {"id_status": "unconfirmed", "sex": "F", "age_at_first_study": 40.0},
+          "identifiers": null,
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Anon 018"},
+              "fields": {"study_date": "2019-04-01", "age_years": 40.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Anon 018 3.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ],
+              "catalog": {
+                "pid_state": "missing",
+                "candidate_labels": {"1": "CASE_018", "2": "CT"},
+                "candidate_levels": [0, 1, 2]
+              }
+            }
+          ]
+        },
+        {
+          "match": {"study_description": "CT Anon 019"},
+          "fields": {"id_status": "unconfirmed", "sex": "F", "age_at_first_study": 40.0},
+          "identifiers": null,
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Anon 019"},
+              "fields": {"study_date": "2019-05-01", "age_years": 40.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Anon 019 3.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ],
+              "catalog": {
+                "pid_state": "placeholder",
+                "candidate_labels": {"1": "CASE_019", "2": "CT"},
+                "candidate_levels": [0, 1, 2]
+              }
+            }
+          ],
+          "why": "\"anonymized\" matches ANONYMIZED case-folded."
+        },
+        {
+          "match": {"study_description": "CT Anon 020"},
+          "fields": {"id_status": "unconfirmed", "sex": "F", "age_at_first_study": 40.0},
+          "identifiers": null,
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Anon 020"},
+              "fields": {"study_date": "2019-06-01", "age_years": 40.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Anon 020 3.0 Br40"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ],
+              "catalog": {
+                "pid_state": "missing",
+                "candidate_labels": {"1": "CASE_020", "2": "CT"},
+                "candidate_levels": [0, 1, 2]
+              }
+            }
+          ],
+          "why": "No PatientID element at all."
+        }
+      ]
+    },
+    {
+      "name": "canary",
+      "folders": ["source1/CANARY_FOLDER"],
+      "covers": "The canary values of ADR 0024. Only identifiers may hold the ID and accession number; the name and birth date are stored nowhere (test_index_privacy.py searches for them).",
+      "patients": [
+        {
+          "match": {"patient_id": "CANARY-ID-4711"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 123.0},
+          "identifiers": {
+            "patient_id": "CANARY-ID-4711",
+            "accession_numbers": ["CANARYACC"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Canary"},
+              "fields": {"study_date": "2024-01-15", "age_years": 123.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Canary 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                }
+              ],
+              "why": "No PatientAge; born 1901-01-01, 123 completed years on 2024-01-15."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "kernels",
+      "folders": ["source1/kernels"],
+      "covers": "Kernel classes per vendor (ADR 0023 decision 7), asserted through series.kernel_class because three slices keep every part out of the ranking.",
+      "patients": [
+        {
+          "match": {"patient_id": "KRN-0001"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 62.0},
+          "identifiers": {
+            "patient_id": "KRN-0001",
+            "accession_numbers": ["KRN0001A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT Kernel Vendors"},
+              "fields": {"study_date": "2024-08-01", "age_years": 62.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "GE Standard"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2,
+                    "kernel_class": "soft"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "GE's own soft list. The GE series carry GE-like private groups."
+                },
+                {
+                  "match": {"description": "GE Bone"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 3,
+                    "kernel_class": "sharp"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "GE Body"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 4,
+                    "kernel_class": "unknown"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "BODY is a body part, no longer in GE's soft list (ADR 0023)."
+                },
+                {
+                  "match": {"description": "Philips B"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 5,
+                    "kernel_class": "soft"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "Philips codes match exactly: b is soft and never matches BONE."
+                },
+                {
+                  "match": {"description": "Philips YC"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 6,
+                    "kernel_class": "sharp"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Philips Smoothd"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 7,
+                    "kernel_class": "unknown"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "Philips takes no suffix letter, so SMOOTHD is not smooth; no other list has it."
+                },
+                {
+                  "match": {"description": "Canon FC08"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 8,
+                    "kernel_class": "soft"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Toshiba FC30"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 9,
+                    "kernel_class": "sharp"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "TOSHIBA is Canon."
+                },
+                {
+                  "match": {"description": "Canon FC99"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 10,
+                    "kernel_class": "unknown"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Other Vendor B30f"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 11,
+                    "kernel_class": "soft"
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "An unknown vendor: every sharp list, then every soft list; Siemens b30 plus f."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dicomdir",
+      "folders": ["source1/dicomdir"],
+      "covers": "A complete DICOMDIR, and one whose copy lost two of the five files it lists.",
+      "patients": [
+        {
+          "match": {"patient_id": "DIR-0001"},
+          "fields": {"id_status": "dicom", "sex": "F", "age_at_first_study": 53.0},
+          "identifiers": {
+            "patient_id": "DIR-0001",
+            "accession_numbers": ["DIR0001C", "DIR0001I"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT DICOMDIR Complete"},
+              "fields": {"study_date": "2024-07-01", "age_years": 53.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Dir Complete 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 5,
+                    "slice_count": 5,
+                    "z_extent_mm": 12.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 5, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 5, "minimum": 50}}
+                  ]
+                }
+              ]
+            },
+            {
+              "match": {"description": "CT DICOMDIR Incomplete"},
+              "fields": {"study_date": "2024-07-02", "age_years": 53.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "Dir Incomplete 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 12.0,
+                    "orientation": "axial",
+                    "slice_spacing_mm": 6.0,
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.dicomdir_incomplete", "params": {"missing": 2}},
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "why": "Instances 2 and 4 (z = 3 and 9) are gone; z = 0, 6, 12 remain, evenly spaced, so only the DICOMDIR can tell that anything is missing."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "names",
+      "folders": ["source1/nfd"],
+      "covers": "File and folder names in NFD (Gefa\\u0308\\u00dfe, Scha\\u0308del), and, where the file system allows it, a file name that is not UTF-8.",
+      "patients": [
+        {
+          "match": {"patient_id": "NFD-0001"},
+          "fields": {"id_status": "dicom", "sex": "M", "age_at_first_study": 48.0},
+          "identifiers": {
+            "patient_id": "NFD-0001",
+            "accession_numbers": ["NFD0001A"],
+            "id_source": "dicom"
+          },
+          "checks": [],
+          "studies": [
+            {
+              "match": {"description": "CT NFD Names"},
+              "fields": {"study_date": "2024-07-03", "age_years": 48.0, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"description": "NFD Names 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 2
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ]
+                },
+                {
+                  "match": {"description": "Latin1 Name 3.0"},
+                  "fields": {
+                    "modality": "CT",
+                    "image_count": 3,
+                    "slice_count": 3,
+                    "z_extent_mm": 6.0,
+                    "orientation": "axial",
+                    "series_number": 3
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 3, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 3, "minimum": 50}}
+                  ],
+                  "requires": "non_utf8_names"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nifti",
+      "folders": ["source1/nifti"],
+      "covers": "NIfTI files named CT_<id> and PT_<id>, a 4D file, an upper-case extension, files outside the naming convention (one a label mask), a gzip that is no NIfTI and a .nii of noise.",
+      "patients": [
+        {
+          "match": {"patient_id": "N001"},
+          "fields": {"id_status": "file", "sex": null, "age_at_first_study": null},
+          "identifiers": {"patient_id": "N001", "accession_numbers": [], "id_source": "file"},
+          "checks": [],
+          "studies": [
+            {
+              "match": {"series": {"modality": "CT", "image_rows": 16}},
+              "fields": {"study_date": null, "age_years": null, "selection_mode": "auto"},
+              "checks": [],
+              "parts": [
+                {
+                  "match": {"modality": "CT", "image_rows": 16},
+                  "fields": {
+                    "modality": "CT",
+                    "image_rows": 16,
+                    "image_columns": 16,
+                    "orientation": "axial",
+                    "pixel_spacing_mm": 0.75,
+                    "slice_count": 60,
+                    "z_extent_mm": 147.5,
+                    "slice_thickness_mm": 2.5
+                  },
+                  "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+                  "reason": {
+                    "outcome": "chosen",
+                    "codes": ["select.chosen.only_candidate"],
+                    "params": {}
+                  },
+                  "checks": [],
+                  "why": "16 x 16 x 60 at 2.5 mm: 59 x 2.5 = 147.5 mm. No SliceThickness, so the spacing stands in. A NIfTI file skips the ImageType rule (C5) and is its own study, without date or description (C10)."
+                }
+              ],
+              "catalog": {"pid_state": "file"}
+            },
+            {
+              "match": {"series": {"modality": "PT", "image_rows": 16}},
+              "fields": {"study_date": null, "age_years": null, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"modality": "PT", "image_rows": 16},
+                  "fields": {
+                    "modality": "PT",
+                    "image_rows": 16,
+                    "image_columns": 16,
+                    "orientation": "axial",
+                    "slice_count": 30,
+                    "z_extent_mm": 116.0
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.not_ct", "select.excluded.too_few_slices"],
+                    "params": {"modality": "PT", "count": 30, "minimum": 50}
+                  },
+                  "why": "PT_N001 joins CT_N001's patient through the same ID. 30 slices at 4 mm: 116 mm. PET checks on a NIfTI file without PET metadata are not decided, so only too_few_slices is asserted.",
+                  "checks_include": [
+                    {"code": "check.too_few_slices", "params": {"count": 30, "minimum": 50}}
+                  ]
+                }
+              ],
+              "catalog": {"pid_state": "file"}
+            }
+          ],
+          "why": "One patient, two studies: each NIfTI file is a study. No age, no sex."
+        },
+        {
+          "match": {"patient_id": "N002"},
+          "fields": {"id_status": "file", "sex": null, "age_at_first_study": null},
+          "identifiers": {"patient_id": "N002", "accession_numbers": [], "id_source": "file"},
+          "checks": [],
+          "studies": [
+            {
+              "match": {"series": {"modality": "CT", "image_rows": 18}},
+              "fields": {"study_date": null, "age_years": null, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"modality": "CT", "image_rows": 18},
+                  "fields": {"modality": "CT", "image_rows": 18, "image_columns": 18},
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes_include": ["select.excluded.nifti_not_3d"]
+                  },
+                  "why": "18 x 18 x 60 x 2: not a single 3D volume. Whether a 4D file has geometry is not decided, so only nifti_not_3d is asserted."
+                }
+              ],
+              "catalog": {"pid_state": "file"}
+            }
+          ]
+        },
+        {
+          "match": {"patient_id": "N003"},
+          "fields": {"id_status": "file", "sex": null, "age_at_first_study": null},
+          "identifiers": {"patient_id": "N003", "accession_numbers": [], "id_source": "file"},
+          "checks": [],
+          "studies": [
+            {
+              "match": {"series": {"modality": "CT", "image_rows": 22}},
+              "fields": {"study_date": null, "age_years": null, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"modality": "CT", "image_rows": 22},
+                  "fields": {
+                    "modality": "CT",
+                    "image_rows": 22,
+                    "image_columns": 22,
+                    "orientation": "axial",
+                    "pixel_spacing_mm": 0.75,
+                    "slice_count": 6,
+                    "z_extent_mm": 12.5
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.too_few_slices"],
+                    "params": {"count": 6, "minimum": 50}
+                  },
+                  "checks": [
+                    {"code": "check.too_few_slices", "params": {"count": 6, "minimum": 50}}
+                  ],
+                  "why": "CT_N003.NII.GZ: the extension matches without regard to case."
+                }
+              ],
+              "catalog": {"pid_state": "file"}
+            }
+          ]
+        },
+        {
+          "match": {"series": {"modality": "OT", "image_rows": 20}},
+          "fields": {"id_status": "unconfirmed", "sex": null, "age_at_first_study": null},
+          "identifiers": null,
+          "checks": [],
+          "studies": [
+            {
+              "match": {"series": {"modality": "OT", "image_rows": 20}},
+              "fields": {"study_date": null, "age_years": null, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"modality": "OT", "image_rows": 20},
+                  "fields": {
+                    "modality": "OT",
+                    "image_rows": 20,
+                    "image_columns": 20,
+                    "orientation": "axial",
+                    "pixel_spacing_mm": 0.75,
+                    "slice_count": 60,
+                    "z_extent_mm": 147.5
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.not_ct", "select.excluded.nifti_unnamed"],
+                    "params": {"modality": "OT"}
+                  },
+                  "checks": [{"code": "check.nifti_unnamed", "params": {}}],
+                  "why": "ct_lower: the CT_ prefix is case-sensitive, so modality OT."
+                }
+              ],
+              "catalog": {
+                "pid_state": "missing",
+                "candidate_levels": [0, 1],
+                "candidate_labels": {"1": "nifti"}
+              }
+            }
+          ],
+          "why": "No ID from a name: pid_state missing, folder candidates, unconfirmed (C11)."
+        },
+        {
+          "match": {"series": {"modality": "OT", "image_rows": 24}},
+          "fields": {"id_status": "unconfirmed", "sex": null, "age_at_first_study": null},
+          "identifiers": null,
+          "checks": [],
+          "studies": [
+            {
+              "match": {"series": {"modality": "OT", "image_rows": 24}},
+              "fields": {"study_date": null, "age_years": null, "selection_mode": "auto"},
+              "checks": [{"code": "check.no_eligible_series", "params": {}}],
+              "parts": [
+                {
+                  "match": {"modality": "OT", "image_rows": 24},
+                  "fields": {
+                    "modality": "OT",
+                    "image_rows": 24,
+                    "image_columns": 24,
+                    "orientation": "axial",
+                    "pixel_spacing_mm": 0.75,
+                    "slice_count": 60,
+                    "z_extent_mm": 147.5
+                  },
+                  "selection": {
+                    "auto_rank": null,
+                    "auto_selected": 0,
+                    "selected": 0,
+                    "is_primary": 0
+                  },
+                  "reason": {
+                    "outcome": "excluded",
+                    "codes": ["select.excluded.not_ct", "select.excluded.nifti_unnamed"],
+                    "params": {"modality": "OT"}
+                  },
+                  "checks": [{"code": "check.nifti_unnamed", "params": {}}],
+                  "why": "seg_mask: a label mask beside a CT is never chosen as one."
+                }
+              ],
+              "catalog": {
+                "pid_state": "missing",
+                "candidate_levels": [0, 1],
+                "candidate_labels": {"1": "nifti"}
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "study": "PET-CT Whole Body",
+      "pet": "PET WB AC",
+      "ct": "CT WB 5.0 B30f LowDose",
+      "pet_attenuation_corrected": 1,
+      "z_overlap_mm": 200.0,
+      "why": "Same study and Frame of Reference; PET -240 to -40 mm inside the CT's -245 to 0 mm, so the overlap is the PET's 200 mm. Every PT part pairs with every CT part, the excluded low-dose CT included."
+    },
+    {
+      "study": "PET-CT Whole Body",
+      "pet": "PET WB AC",
+      "ct": "CT WB 5.0 Br38f",
+      "pet_attenuation_corrected": 1,
+      "z_overlap_mm": 200.0
+    },
+    {
+      "study": "PET-CT Whole Body",
+      "pet": "PET WB NAC",
+      "ct": "CT WB 5.0 B30f LowDose",
+      "pet_attenuation_corrected": 0,
+      "z_overlap_mm": 200.0
+    },
+    {
+      "study": "PET-CT Whole Body",
+      "pet": "PET WB NAC",
+      "ct": "CT WB 5.0 Br38f",
+      "pet_attenuation_corrected": 0,
+      "z_overlap_mm": 200.0
+    },
+    {
+      "study": "PET-CT Whole Body",
+      "pet": "PET WB No CorrectedImage",
+      "ct": "CT WB 5.0 B30f LowDose",
+      "pet_attenuation_corrected": null,
+      "z_overlap_mm": 200.0
+    },
+    {
+      "study": "PET-CT Whole Body",
+      "pet": "PET WB No CorrectedImage",
+      "ct": "CT WB 5.0 Br38f",
+      "pet_attenuation_corrected": null,
+      "z_overlap_mm": 200.0
+    }
+  ],
+  "variants": {
+    "accept_derived_primary": {
+      "selection": {"accept_derived_primary": true},
+      "why": "OPEN_QUESTIONS #24: with the setting on, DERIVED passes when PRIMARY is among values 1 and later.",
+      "parts": [
+        {
+          "study": "PET-CT Whole Body",
+          "match": {"description": "CT WB 5.0 Br38f"},
+          "selection": {"auto_rank": 1, "auto_selected": 1, "selected": 1, "is_primary": 1},
+          "reason": {"outcome": "chosen", "codes": ["select.chosen.original"], "params": {}},
+          "why": "Coverage 245 mm, thickness 5 mm and soft kernels tie; ORIGINAL wins at step 4."
+        },
+        {
+          "study": "PET-CT Whole Body",
+          "match": {"description": "CT WB 5.0 B30f LowDose"},
+          "selection": {"auto_rank": 2, "auto_selected": 0, "selected": 0, "is_primary": 0},
+          "reason": {"outcome": "eligible", "codes": ["select.eligible.derived"], "params": {}}
+        },
+        {
+          "study": "CT Image Types",
+          "match": {"description": "Reformatted"},
+          "reason": {
+            "outcome": "excluded",
+            "codes": [
+              "select.excluded.image_type_value",
+              "select.excluded.not_axial_image_type",
+              "select.excluded.too_few_slices"
+            ],
+            "params": {"value": "REFORMATTED", "count": 3, "minimum": 50}
+          },
+          "why": "PRIMARY is value 1, so DERIVED passes; REFORMATTED and the missing plane still exclude it. Secondary Axial and the screen save have no PRIMARY and keep derived."
+        }
+      ]
+    }
+  }
+}

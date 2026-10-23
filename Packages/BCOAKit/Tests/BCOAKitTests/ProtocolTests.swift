@@ -37,6 +37,33 @@ private func fixtures(_ folder: String) throws -> [URL] {
     #expect(event == .progress(jobID: "j_1", stage: .segment, model: "clin_ct_organs", fraction: nil, message: "Model 2 of 5"))
 }
 
+@Test func indexProgressCarriesItsDetail() throws {
+    // The walk does not know its total yet; null must decode, not fail the event.
+    let event = try WorkerEvent.parse(
+        line: #"{"type":"progress","job_id":"j_7","stage":"index","fraction":null,"message":"Found 41,200 files","detail":{"phase":"walk","done":41200,"total":null}}"#)
+    #expect(event == .progress(
+        jobID: "j_7", stage: .index, model: nil, fraction: nil, message: "Found 41,200 files",
+        detail: ProgressDetail(phase: .walk, done: 41200, total: nil)))
+}
+
+@Test func previewArtifactDecodes() throws {
+    let hash = String(repeating: "0", count: 64)
+    let event = try WorkerEvent.parse(
+        line: #"{"type":"artifact","kind":"preview","path":"index/previews/\#(hash).png","sha256":"\#(hash)"}"#)
+    #expect(event == .artifact(kind: .preview, path: "index/previews/\(hash).png", sha256: hash))
+}
+
+@Test func indexJobFixturesNameTheirMode() throws {
+    let files = try fixtures("jobs").filter { $0.lastPathComponent.hasPrefix("index_") }
+    #expect(files.count == 3)
+    for file in files {
+        let job = try JSONDecoder().decode(WorkerJob.self, from: Data(contentsOf: file))
+        let mode = file.deletingPathExtension().lastPathComponent.dropFirst("index_".count)
+        #expect(job.kind == .index)
+        #expect(job.payload["mode"] == JSONValue.string(String(mode)))
+    }
+}
+
 @Test func progressWithoutFractionIsRefused() {
     #expect(throws: (any Error).self) {
         try WorkerEvent.parse(line: #"{"type":"progress","job_id":"j","stage":"index","message":""}"#)
@@ -80,4 +107,21 @@ private func fixtures(_ folder: String) throws -> [URL] {
         .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
         .joined()
     #expect(joined.contains(IntendedUse.statement))
+    #expect(python.contains(IntendedUse.notMedicalDevice))
+    #expect(joined.contains(IntendedUse.regulatory))
+    #expect(python.contains(IntendedUse.warranty))
+}
+
+@Test func theDMGReadMeCarriesEveryNotice() throws {
+    let readMe = try String(contentsOf: projectRoot.appendingPathComponent("App/DMG/Read Me.txt"), encoding: .utf8)
+    let flat = readMe.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    for text in [IntendedUse.statement, IntendedUse.notMedicalDevice, IntendedUse.regulatory, IntendedUse.warranty,
+                 IntendedUse.responsibility] {
+        #expect(flat.contains(text.split(whereSeparator: \.isWhitespace).joined(separator: " ")), "\(text.prefix(40))")
+    }
+}
+
+@Test func theEveryPageLineIsThePlansWording() throws {
+    let plan = try String(contentsOf: projectRoot.appendingPathComponent("docs/PLAN.md"), encoding: .utf8)
+    #expect(plan.contains(IntendedUse.everyPage))
 }

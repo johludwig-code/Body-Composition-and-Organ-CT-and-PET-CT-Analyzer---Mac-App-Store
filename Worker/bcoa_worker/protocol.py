@@ -8,6 +8,7 @@ the Swift `WorkerEvent` decoder.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,14 +20,21 @@ Stage = Literal[
     "index", "convert", "check", "segment", "metrics", "viewer_cache", "export", "selftest"
 ]
 LogLevel = Literal["debug", "info", "warning", "error"]
-ArtifactKind = Literal["nifti", "labelmap", "viewer_cache", "metrics", "export", "log", "report"]
+ArtifactKind = Literal[
+    "nifti", "labelmap", "viewer_cache", "metrics", "export", "log", "report", "preview"
+]
 DoneStatus = Literal["ok", "failed", "cancelled"]
 JobKind = Literal[
     "index", "convert", "segment", "metrics", "viewer_cache", "export", "selftest", "spike_s2"
 ]
+ProgressPhase = Literal["walk", "read", "group", "previews"]
 
 STAGES: frozenset[str] = frozenset(Stage.__args__)  # type: ignore[attr-defined]
 JOB_KINDS: frozenset[str] = frozenset(JobKind.__args__)  # type: ignore[attr-defined]
+PROGRESS_PHASES: frozenset[str] = frozenset(ProgressPhase.__args__)  # type: ignore[attr-defined]
+
+
+SERIES_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 
 
 class ProtocolError(ValueError):
@@ -41,12 +49,25 @@ class Hello:
 
 
 @dataclass(frozen=True)
+class ProgressDetail:
+    """Progress as numbers, sent by index jobs (ADR 0020). The app renders its
+    own localized text from these, so `message` can stay English and serve
+    the log only."""
+
+    phase: ProgressPhase
+    done: int
+    # None while the total is not known yet, as during the walk; sent as null.
+    total: int | None
+
+
+@dataclass(frozen=True)
 class Progress:
     job_id: str
     stage: Stage
     fraction: float | None
     message: str
     model: str | None = None
+    detail: ProgressDetail | None = None
     type: Literal["progress"] = "progress"
 
 
@@ -115,10 +136,13 @@ _EVENT_TYPES: dict[str, type] = {
 
 def event_to_line(event: Event) -> str:
     """One event as one line. Optional fields that are unset are left out
-    rather than sent as null, except `fraction`, whose null is meaningful."""
+    rather than sent as null, except `fraction` and a detail's `total`, whose
+    null is meaningful."""
     raw = asdict(event)
     if isinstance(event, Progress) and event.model is None:
         raw.pop("model")
+    if isinstance(event, Progress) and event.detail is None:
+        raw.pop("detail")
     return json.dumps(raw, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
 
 
@@ -129,6 +153,8 @@ def parse_event(line: str | dict[str, Any]) -> Event:
     if cls is None:
         raise ProtocolError(f"unknown event type: {kind!r}")
     try:
+        if kind == "progress" and isinstance(raw.get("detail"), dict):
+            raw["detail"] = ProgressDetail(**raw["detail"])
         event = cls(**raw)
     except TypeError as exc:
         raise ProtocolError(f"malformed {kind} event: {exc}") from exc
@@ -137,7 +163,25 @@ def parse_event(line: str | dict[str, Any]) -> Event:
             raise ProtocolError(f"unknown stage: {event.stage!r}")
         if event.fraction is not None and not 0.0 <= event.fraction <= 1.0:
             raise ProtocolError(f"fraction out of range: {event.fraction}")
+        if event.detail is not None:
+            _check_detail(event.detail)
     return event
+
+
+def _is_count(value: object) -> bool:
+    # bool is an int in Python; `"done": true` is still not a count.
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _check_detail(detail: object) -> None:
+    if not isinstance(detail, ProgressDetail):
+        raise ProtocolError(f"progress detail is not an object: {detail!r}")
+    if detail.phase not in PROGRESS_PHASES:
+        raise ProtocolError(f"unknown progress phase: {detail.phase!r}")
+    if not _is_count(detail.done):
+        raise ProtocolError(f"progress done is not a count: {detail.done!r}")
+    if detail.total is not None and not _is_count(detail.total):
+        raise ProtocolError(f"progress total is not a count: {detail.total!r}")
 
 
 @dataclass(frozen=True)
@@ -151,6 +195,17 @@ class Job:
     heartbeat_seconds: float = 10.0
     protocol_version: int = PROTOCOL_VERSION
 
+    def series_key(self) -> str:
+        """The payload's series key, which becomes a folder name in `work/`
+        and `viewer-cache/`. Only the shape the index gives keys (`s_000002`;
+        the tests' `se1`): a key such as `.` would name the parent folder,
+        and the viewer cache would replace all of `viewer-cache/` with one
+        series."""
+        value = self.payload.get("series_key")
+        if not isinstance(value, str) or not SERIES_KEY.fullmatch(value):
+            raise ProtocolError("series_key is missing or not a series key")
+        return value
+
     def project_path(self, relative: str) -> Path:
         """Resolve a project-relative path from the payload, refusing anything
         that would leave the project folder. The worker writes nowhere else."""
@@ -159,6 +214,30 @@ class Job:
         if candidate != root and root not in candidate.parents:
             raise ProtocolError(f"path leaves the project folder: {relative!r}")
         return candidate
+
+    def source_root(self, source_id: int) -> Path:
+        """The absolute root of a source that an index payload lists as active.
+
+        Source folders are the only paths outside the project the worker
+        reads, and this is where it gets them: a source the payload does not
+        list, or lists without a root, is refused (ADR 0020 decision 10). The
+        root is taken as written, not resolved, because resolving a path on a
+        dropped network share can hang, and the grant the app made is for
+        this path. The message names the source by number only: its root
+        holds a folder name, and folder names often carry patient names.
+        """
+        for entry in self.payload.get("sources") or []:
+            if not isinstance(entry, dict) or type(entry.get("source_id")) is not int:
+                continue
+            if entry["source_id"] != source_id:
+                continue
+            root = entry.get("root")
+            if entry.get("status") != "active" or not isinstance(root, str):
+                raise ProtocolError(f"source {source_id} has no root to read")
+            if not root.startswith("/"):
+                raise ProtocolError(f"source {source_id} has a relative root")
+            return Path(root)
+        raise ProtocolError(f"source {source_id} is not listed in the job")
 
 
 def parse_job(raw: dict[str, Any]) -> Job:

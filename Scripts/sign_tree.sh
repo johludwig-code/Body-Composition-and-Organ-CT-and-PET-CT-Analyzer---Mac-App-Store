@@ -17,6 +17,15 @@ HELPER_ENTITLEMENTS="$3"
 timestamp=(--timestamp)
 [[ "$IDENTITY" == "-" ]] && timestamp=(--timestamp=none)
 
+# ADR 0030: from macOS 27 on, an ad hoc signed hardened process may load no
+# ad hoc signed library ("different Team IDs"), so python3 could not load
+# libpython. Ad hoc builds give the helpers the sibling HelperAdHoc file,
+# which also turns library validation off; real identities never do.
+if [[ "$IDENTITY" == "-" ]]; then
+  adhoc="${HELPER_ENTITLEMENTS%.entitlements}AdHoc.entitlements"
+  [[ -f "$adhoc" ]] && HELPER_ENTITLEMENTS="$adhoc"
+fi
+
 is_macho() {
   # Thin arm64/x86_64 (feedfacf / cffaedfe) and universal (cafebabe) binaries.
   local magic

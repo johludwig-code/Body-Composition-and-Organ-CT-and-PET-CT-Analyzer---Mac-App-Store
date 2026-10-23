@@ -50,10 +50,26 @@ Swift part. Before calling anything done, check it against these:
 ## Commands
 
 ```bash
-make test-worker     # pytest + ruff for Worker/
+make test-worker     # pytest + ruff for Worker/ and Scripts/
 make test-swift      # swift test for Packages/BCOAKit and Packages/BCOAStore
 make all             # runtime → models → app → sign → verify
+make worker          # only the worker package into build/runtime (after a worker change)
+make app CONFIG=Debug   # the app with the backend embedded; Debug has the hooks below
+make dmg             # sign (ad hoc by default, ADR 0030), verify, build/BCOAnalyzer.dmg
+python3 Scripts/index_code_texts.py   # after a change of Protocol/index_codes.json
+# UI tests (they take over mouse and keyboard briefly; public data only):
+TEST_RUNNER_BCOA_PROJECT=<empty folder> TEST_RUNNER_BCOA_SOURCE=<DICOM folder> \
+  xcodebuild test -project BCOAnalyzer.xcodeproj -scheme BCOAnalyzer -destination 'platform=macOS' \
+  -derivedDataPath build CODE_SIGN_IDENTITY=- -only-testing:BCOAnalyzerUITests/ImportFlowTests \
+  -collect-test-diagnostics never
 ```
+
+Debug builds only: `open BCOAnalyzer.app --args -BCOAAutoAnalyze clin_ct_organs`
+runs a batch on the restored project, `-BCOAAutoExport <name>` exports the
+newest run, `-BCOAOpenViewer <series_key>` opens the viewer. On macOS 27 an
+ad hoc build needs the helpers' library validation off (ADR 0030); the
+repository may sit on a volume whose name has a space, so the Makefile
+uses relative paths.
 
 ## Comments
 

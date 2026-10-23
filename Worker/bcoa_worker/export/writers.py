@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import xlsxwriter
+import xlsxwriter.exceptions
 
 from bcoa_worker.export.tables import Column, Sheet
 from bcoa_worker.naming import check_dimensions
@@ -83,7 +84,15 @@ def write_xlsx(sheets: Sequence[Sheet], path: Path, *, created: datetime) -> Non
             if sheet.columns:
                 worksheet.autofilter(0, 0, max(len(sheet.rows), 1), len(sheet.columns) - 1)
     finally:
-        workbook.close()
+        try:
+            workbook.close()
+        except xlsxwriter.exceptions.FileCreateError as exc:
+            # XlsxWriter wraps the OSError, and the export job tells a full
+            # disk from a folder it may not write by the errno.
+            cause = exc.args[0] if exc.args and isinstance(exc.args[0], OSError) else None
+            if cause is None:
+                raise
+            raise cause from exc
 
 
 def _write_cell(

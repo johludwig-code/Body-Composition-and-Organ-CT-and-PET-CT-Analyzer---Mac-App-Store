@@ -1,7 +1,8 @@
 // swift-tools-version: 6.0
 // BCOAKit holds everything of the app that can be tested without a window:
 // the worker protocol, the worker process, the job queue, viewer geometry and
-// windowing. Foundation only, so `swift test` runs on any Mac and in CI.
+// windowing, and the case report's PDF. Foundation and the system's Core
+// Graphics and Core Text only, so `swift test` runs on any Mac and in CI.
 import PackageDescription
 
 let package = Package(
