@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import random
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -301,3 +303,58 @@ def test_export_job_module_is_the_one_under_test() -> None:
         Path(export_job.__file__).parent.parent.parent.name == "Worker"
         or "site-packages" not in export_job.__file__
     )
+
+
+# -- the app goes away under a running job -------------------------------------------
+
+
+def test_a_worker_whose_app_is_gone_leaves_at_once(tmp_path: Path) -> None:
+    from bcoa_worker.environment import scratch_dir
+
+    job = Job("j_orphan", "segment", tmp_path, tmp_path / "log", tmp_path, {})
+    scratch = scratch_dir(job)
+    scratch.mkdir(parents=True)
+    (scratch / "intermediate.nii.gz").write_bytes(b"300 MiB of MOOSE")
+    parents = iter([100, 100, 1])
+    codes: list[int] = []
+    thread = worker._watch_parent(
+        job, 100, interval=0.01, getppid=lambda: next(parents, 1), exit=codes.append
+    )
+    thread.join(timeout=5)
+    assert codes == [worker.EXIT_ORPHANED]
+    assert not scratch.exists()
+
+
+def test_a_real_orphan_ends_within_seconds(tmp_path: Path) -> None:
+    # A parent starts a worker-like child that only watches, then dies at
+    # once without a word, as a crashed app does.
+    child = f"""
+import sys, time
+sys.path.insert(0, {str(Path(worker.__file__).parent.parent)!r})
+from pathlib import Path
+from bcoa_worker import worker
+from bcoa_worker.protocol import Job
+import os
+job = Job("j_child", "segment", Path({str(tmp_path)!r}), Path({str(tmp_path)!r}) / "log", Path({str(tmp_path)!r}), {{}})
+worker._watch_parent(job, os.getppid(), interval=0.1)
+time.sleep(60)
+"""
+    parent = f"""
+import subprocess, sys, os
+proc = subprocess.Popen([sys.executable, "-c", {child!r}], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print(proc.pid, flush=True)
+os._exit(0)
+"""
+    out = subprocess.run([sys.executable, "-c", parent], capture_output=True, text=True, timeout=30)
+    pid = int(out.stdout.strip())
+    deadline = time.time() + 10
+    alive = True
+    while alive and time.time() < deadline:
+        try:
+            os.kill(pid, 0)
+            time.sleep(0.1)
+        except ProcessLookupError:
+            alive = False
+    if alive:
+        os.kill(pid, 9)
+    assert not alive, "the child outlived its parent by 10 s"

@@ -62,6 +62,12 @@ final class ProjectSession {
     var previewsVersion = 0
 
     var url: URL { folder.url }
+
+    /// Where workers keep their intermediate files, one folder per job
+    /// (`BundleLayout.workerEnvironment`).
+    nonisolated static func scratch(of project: URL) -> URL {
+        project.appendingPathComponent("work/.scratch")
+    }
     var catalogURL: URL { url.appendingPathComponent(IndexStore.catalogPath) }
 
     init(folder: SecurityScopedFolder) throws {
@@ -97,6 +103,12 @@ final class ProjectSession {
     /// ADR 0021 decision 8: merge what a crash left complete, then scan what
     /// was interrupted and what is reachable again.
     private func atLaunch() async {
+        // No worker of this project runs before its session starts one, so
+        // whatever scratch is left belongs to a worker that is gone.
+        if let leftovers = try? FileManager.default.contentsOfDirectory(
+            at: Self.scratch(of: url), includingPropertiesForKeys: nil) {
+            for folder in leftovers { try? FileManager.default.removeItem(at: folder) }
+        }
         await merge()
         resumePipeline()
         #if DEBUG
@@ -105,6 +117,11 @@ final class ProjectSession {
         // pipeline can be checked in the real, sandboxed app.
         if let models = UserDefaults.standard.string(forKey: "BCOAAutoAnalyze"), !models.isEmpty {
             startAnalysis(models: models.split(separator: ",").map(String.init), device: "auto")
+        }
+        // `-BCOARetryFailed YES` queues every failed stage again, as the
+        // Retry Failed button does, for the crash test without a click.
+        if UserDefaults.standard.bool(forKey: "BCOARetryFailed") {
+            retryFailedStages()
         }
         // `-BCOAAutoExport <name>` exports the newest run with the defaults,
         // or with `-BCOAAutoExportOptions case_reports=true,tables=false`
@@ -305,6 +322,11 @@ final class ProjectSession {
     }
 
     private func finalize(_ job: QueuedJob) async {
+        // A worker ended by a signal (a crash, Cancel's second step, the
+        // crash test's kill) cannot remove its scratch, which holds MOOSE's
+        // intermediate images, hundreds of MB per model. The worker removes
+        // it itself in every other case; removing it again costs nothing.
+        try? FileManager.default.removeItem(at: Self.scratch(of: url).appendingPathComponent(job.id))
         if job.job.payload["mode"]?.stringValue == "previews" {
             previewsVersion += 1
             return

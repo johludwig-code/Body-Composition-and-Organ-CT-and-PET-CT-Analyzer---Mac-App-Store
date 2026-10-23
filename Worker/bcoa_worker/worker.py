@@ -2,18 +2,21 @@
 
 Life of a worker: read the job, claim stdout for the protocol, say hello, keep
 a heartbeat going, run the one job, say done, exit. Exit codes: 0 ok, 1 failed,
-130 cancelled (SIGTERM), 2 the job file itself was unusable.
+130 cancelled (SIGTERM), 2 the job file itself was unusable, 3 the app was
+gone (its process ended, or nobody reads the protocol any more).
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib
+import os
 import platform
 import shutil
 import signal
 import sys
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from types import FrameType
@@ -85,12 +88,57 @@ def _versions() -> dict[str, str]:
     return versions
 
 
+EXIT_ORPHANED = 3
+
+
+def _leave(job: Job, exit: Callable[[int], object] = os._exit) -> None:
+    """The app is gone: nobody will read the result, and App Review
+    2.4.5(iii) allows no process after the app has ended. The scratch goes,
+    then the process, at once, without unwinding a segmentation in torch."""
+    shutil.rmtree(scratch_dir(job), ignore_errors=True)
+    exit(EXIT_ORPHANED)
+
+
+def _watch_parent(
+    job: Job,
+    parent: int,
+    *,
+    interval: float = 1.0,
+    getppid: Callable[[], int] = os.getppid,
+    exit: Callable[[int], object] = os._exit,
+) -> threading.Thread:
+    """Ends the worker when the app's process ends. A quit cancels the job
+    with SIGTERM, but a crash or a force quit sends nothing: the worker is
+    handed to launchd and, mid-segmentation, ran on for minutes (found by
+    the crash test of 23 October 2026). A changed parent is the one sign
+    that cannot be missed."""
+
+    def watch() -> None:
+        while True:
+            # launchd (pid 1) as the parent means the app was gone before the
+            # worker even looked; the app never starts a worker through it.
+            current = getppid()
+            if current != parent or current == 1:
+                _leave(job, exit)
+                return
+            time.sleep(interval)
+
+    thread = threading.Thread(target=watch, name="parent-watch", daemon=True)
+    thread.start()
+    return thread
+
+
 def _start_heartbeat(job: Job, channel: ProtocolChannel) -> threading.Event:
     stop = threading.Event()
 
     def beat() -> None:
         while not stop.wait(job.heartbeat_seconds):
-            channel.send(Heartbeat.now(job.job_id))
+            try:
+                channel.send(Heartbeat.now(job.job_id))
+            except OSError:
+                # The app closed its end of the pipe: the same as its death.
+                _leave(job)
+                return
 
     threading.Thread(target=beat, name="heartbeat", daemon=True).start()
     return stop
@@ -154,6 +202,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     channel = ProtocolChannel.take_over_stdout(job.log_path)
+    _watch_parent(job, os.getppid())
     apply_runtime_environment(job)
     # After the worker's own setup, which creates folders and nothing else,
     # and before any job imports torch, MOOSE or nnU-Net (ADR 0016).
