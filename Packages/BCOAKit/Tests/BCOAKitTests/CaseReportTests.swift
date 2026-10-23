@@ -104,6 +104,12 @@ private func phantom(_ list: [Box]) throws -> (URL, [String: [Int: Int]]) {
 /// model listed as the worker lists them.
 private func content(_ counts: [String: [Int: Int]], edit: (inout [String: Any]) -> Void = { _ in }) throws
     -> CaseReportContent {
+    var object = try contentObject(counts)
+    edit(&object)
+    return try CaseReportContent(json: try JSONSerialization.data(withJSONObject: object))
+}
+
+private func contentObject(_ counts: [String: [Int: Int]]) throws -> [String: Any] {
     let models = counts.keys.sorted().map { model -> [String: Any] in
         let structures = catalog.models[model]!.sorted { $0.key < $1.key }.map { labelID, entry -> [String: Any] in
             let voxels = counts[model]?[labelID] ?? 0
@@ -119,7 +125,7 @@ private func content(_ counts: [String: [Int: Int]], edit: (inout [String: Any])
         }
         return ["name": model, "key": String(model.dropFirst("clin_ct_".count)), "status": "ok", "structures": structures]
     }
-    var object: [String: Any] = [
+    let object: [String: Any] = [
         "format": 1, "case": "P0001_t1_s1", "pseudonym": "P0001", "timepoint": 1, "series_index": 1,
         "date": ["kind": "days_since_first", "value": 0], "sex": "F", "age_years": 61, "series_key": "s_000001",
         "series": ["description": "Abdomen 1.0 Br40", "modality": "CT", "slice_thickness_mm": 1.0,
@@ -131,8 +137,7 @@ private func content(_ counts: [String: [Int: Int]], edit: (inout [String: Any])
         "methods_text": "Segmentations were generated with MOOSE v3.2.2 (made-up methods text for the test).",
         "notice": IntendedUse.everyPage, "statement": IntendedUse.statement,
     ]
-    edit(&object)
-    return try CaseReportContent(json: try JSONSerialization.data(withJSONObject: object))
+    return object
 }
 
 private let renderer = CaseReportRenderer(appName: "Body Composition and Organ CT and PET-CT Analyzer", appVersion: "0.1.0")
@@ -490,4 +495,117 @@ func reportsOfARealProject() throws {
     #expect(drawn[2].pdf == nil && drawn[2].error != nil)
     #expect(drawn[3].pdf == nil && drawn[3].error != nil)
     #expect(try FileManager.default.contentsOfDirectory(atPath: reports.path).filter { $0.hasPrefix(".") }.isEmpty)
+}
+
+// -- robustness -------------------------------------------------------------------
+
+/// A cache whose meta.json is damaged is refused, never a crash: a zero
+/// size or a spacing that is not a positive number reached the
+/// preconditions of VolumeGeometry before.
+@Test(arguments: [
+    #"{"size": [0, 512, 300], "spacing_mm": [1, 1, 1]}"#,
+    #"{"size": [512, 512, -3], "spacing_mm": [1, 1, 1]}"#,
+    #"{"size": [512, 512, 300], "spacing_mm": [0, 1, 1]}"#,
+    #"{"size": [512, 512, 300], "spacing_mm": [1, -1, 1]}"#,
+    #"{"size": [4000000, 4000000, 4000000], "spacing_mm": [1, 1, 1]}"#,
+    #"{"size": [512, 512], "spacing_mm": [1, 1, 1]}"#,
+    #"{"size": "512", "spacing_mm": [1, 1, 1]}"#,
+    #"not json"#,
+])
+func aDamagedCacheIsRefused(meta: String) throws {
+    #expect(ViewerMeta(json: Data(meta.utf8)) == nil)
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("bcoa-bad-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data(meta.utf8).write(to: folder.appendingPathComponent("meta.json"))
+    #expect(throws: (any Error).self) { try ViewerVolume(folder: folder) }
+}
+
+@Test func aCacheWhoseFilesAreCutShortIsRefused() throws {
+    let (folder, _) = try phantom(boxes())
+    let image = folder.appendingPathComponent("image.i16")
+    let data = try Data(contentsOf: image)
+    try data.prefix(data.count / 2).write(to: image)
+    #expect(throws: ViewerVolume.LoadError.self) { try ViewerVolume(folder: folder) }
+}
+
+/// Deterministic mutations of a valid content file: every one is read or
+/// refused, and every one that is read is drawn or refused, but none ends
+/// the process or writes a half file.
+@Test func mutatedContentFilesAreDrawnOrRefusedNeverCrash() throws {
+    let (folder, counts) = try phantom(boxes())
+    let volume = try ViewerVolume(folder: folder)
+    let valid = try JSONSerialization.jsonObject(
+        with: try JSONSerialization.data(withJSONObject: try contentObject(counts))) as! [String: Any]
+    var generator = SplitMix(seed: 20261023)
+    let hostile: [Any] = [NSNull(), 0, -1, Int.max, 1e308, -0.0, "", String(repeating: "W", count: 4000),
+                          "../../etc", "P0001_t1_s1\n", [], [:], ["x"], true, "\u{202E}evil", "😀"]
+    let out = FileManager.default.temporaryDirectory.appendingPathComponent("bcoa-fuzz-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    var read = 0, drawn = 0
+    for round in 0..<120 {
+        var object = valid
+        for _ in 0..<(1 + Int(generator.next() % 4)) {
+            mutate(&object, &generator, hostile)
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: object),
+              let content = try? CaseReportContent(json: data) else { continue }
+        read += 1
+        let url = out.appendingPathComponent("r\(round).pdf")
+        if (try? renderer.render(content, catalog: catalog, volume: round % 3 == 0 ? nil : volume, to: url)) != nil {
+            drawn += 1
+            #expect(PDFDocument(url: url) != nil, "round \(round)")
+        } else {
+            #expect(!FileManager.default.fileExists(atPath: url.path), "round \(round)")
+        }
+    }
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: out.path).filter { $0.hasPrefix(".") }
+    #expect(leftovers.isEmpty)
+    // The fuzz must exercise both outcomes to mean anything.
+    #expect(read > 20)
+    #expect(drawn > 10)
+}
+
+private struct SplitMix {
+    var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+}
+
+/// Replaces, removes or retypes one value somewhere in the tree.
+private func mutate(_ object: inout [String: Any], _ generator: inout SplitMix, _ hostile: [Any]) {
+    let keys = object.keys.sorted()
+    guard !keys.isEmpty else { return }
+    let key = keys[Int(generator.next() % UInt64(keys.count))]
+    let pick = hostile[Int(generator.next() % UInt64(hostile.count))]
+    switch generator.next() % 4 {
+    case 0:
+        object.removeValue(forKey: key)
+    case 1:
+        object[key] = pick
+    default:
+        if var models = object[key] as? [[String: Any]], !models.isEmpty {
+            let m = Int(generator.next() % UInt64(models.count))
+            if var structures = models[m]["structures"] as? [[String: Any]], !structures.isEmpty {
+                let s = Int(generator.next() % UInt64(structures.count))
+                let fields = ["voxel_count", "volume_ml", "hu_mean", "label", "label_id", "flags", "note", "excluded"]
+                let field = fields[Int(generator.next() % UInt64(fields.count))]
+                structures[s][field] = pick
+                models[m]["structures"] = structures
+            } else {
+                models[m]["status"] = pick
+            }
+            object[key] = models
+        } else if var nested = object[key] as? [String: Any] {
+            mutate(&nested, &generator, hostile)
+            object[key] = nested
+        } else {
+            object[key] = pick
+        }
+    }
 }

@@ -198,6 +198,12 @@ enum ErrorText {
         case "labelmap_missing": String(localized: "A segmentation is missing.")
         case "watchdog_timeout": String(localized: "The worker stopped responding and was ended.")
         case "results_not_stored": String(localized: "The results could not be saved in the project.")
+        case "disk_full": String(localized: "The disk is full; free space and try again.")
+        case "export_not_writable": String(localized: "The project's exports folder cannot be written.")
+        case "export_write_failed": String(localized: "Writing the export failed; try again.")
+        case "export_too_large": String(localized: "The table is too large for Excel; export as CSV, or in the other layout.")
+        case "bad_export_options", "bad_export_name": String(localized: "The export settings are not valid.")
+        case "unknown_run": String(localized: "The run no longer exists in the project.")
         case let code?: code
         case nil: String(localized: "Unknown error")
         }

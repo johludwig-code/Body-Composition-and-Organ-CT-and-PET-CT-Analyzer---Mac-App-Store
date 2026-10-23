@@ -23,9 +23,14 @@ public struct ViewerMeta: Sendable, Equatable {
     }
 
     public init?(json data: Data) {
+        // A size of 0 or a spacing that is not a positive number would reach
+        // the preconditions of VolumeGeometry and end the app; a damaged
+        // cache is refused here instead, and the viewer offers to rebuild it.
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let size = object["size"] as? [Int], size.count == 3,
-              let spacing = (object["spacing_mm"] as? [NSNumber])?.map(\.doubleValue), spacing.count == 3
+              let size = object["size"] as? [Int], size.count == 3, size.allSatisfy({ $0 > 0 }),
+              size.reduce(1, { $0.multipliedReportingOverflow(by: $1).partialValue }) < 1 << 34,
+              let spacing = (object["spacing_mm"] as? [NSNumber])?.map(\.doubleValue), spacing.count == 3,
+              spacing.allSatisfy({ $0.isFinite && $0 > 0 })
         else { return nil }
         let origin = (object["origin_mm"] as? [NSNumber])?.map(\.doubleValue) ?? [0, 0, 0]
         self.size = (size[0], size[1], size[2])
