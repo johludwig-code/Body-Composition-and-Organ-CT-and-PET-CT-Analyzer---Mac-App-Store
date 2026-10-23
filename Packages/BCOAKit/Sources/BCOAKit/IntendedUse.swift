@@ -22,6 +22,17 @@ public enum IntendedUse {
     public static let notMedicalDevice = "Not a medical device; not for diagnosis or treatment decisions."
     public static let everyPage = "\(short) \(notMedicalDevice)"
 
+    /// The regulatory facts beside the intended use: About, the start screen,
+    /// the case report, the DMG's Read Me. A statement of fact, not a
+    /// classification, which only the institution can give (OPEN_QUESTIONS #21).
+    public static let regulatory = """
+        It carries no CE marking and no FDA clearance, and its results are not validated for \
+        any clinical purpose.
+        """
+
+    /// The warranty line of About, the case report and the DMG's Read Me.
+    public static let warranty = "Provided as is, without warranty of any kind, to the extent the law permits."
+
     /// What the user is responsible for, in the About window and the user
     /// guide. Not a licence and not legal advice (plan §14).
     public static let responsibility = """

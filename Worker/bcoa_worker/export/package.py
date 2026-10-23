@@ -31,7 +31,7 @@ from bcoa_worker.export.tables import (
     Sheet,
     build,
 )
-from bcoa_worker.intended_use import EVERY_PAGE, STATEMENT
+from bcoa_worker.intended_use import EVERY_PAGE, REGULATORY, STATEMENT, WARRANTY
 
 SHEETS = ("labels", "qc", "data_dictionary")
 
@@ -39,6 +39,8 @@ README = """Reproducibility package of an export of the {app}.
 
 {notice}
 {statement}
+{regulatory}
+{warranty}
 
 provenance.json      the run: versions, device, model checksums, settings
 results_long.csv     every metric, one row per patient, series, model and structure
@@ -94,7 +96,13 @@ def contents(
         for m in data.run.models
     ]
     files = {
-        "README.txt": README.format(app=APP_NAME, notice=EVERY_PAGE, statement=STATEMENT).encode(),
+        "README.txt": README.format(
+            app=APP_NAME,
+            notice=EVERY_PAGE,
+            statement=STATEMENT,
+            regulatory=REGULATORY,
+            warranty=WARRANTY,
+        ).encode(),
         "provenance.json": json.dumps(provenance, indent=1, sort_keys=True).encode(),
         "results_long.csv": _csv(long.sheet("results")),
         "export_settings.json": json.dumps(

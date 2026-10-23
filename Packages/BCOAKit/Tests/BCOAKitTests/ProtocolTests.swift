@@ -108,6 +108,17 @@ private func fixtures(_ folder: String) throws -> [URL] {
         .joined()
     #expect(joined.contains(IntendedUse.statement))
     #expect(python.contains(IntendedUse.notMedicalDevice))
+    #expect(joined.contains(IntendedUse.regulatory))
+    #expect(python.contains(IntendedUse.warranty))
+}
+
+@Test func theDMGReadMeCarriesEveryNotice() throws {
+    let readMe = try String(contentsOf: projectRoot.appendingPathComponent("App/DMG/Read Me.txt"), encoding: .utf8)
+    let flat = readMe.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    for text in [IntendedUse.statement, IntendedUse.notMedicalDevice, IntendedUse.regulatory, IntendedUse.warranty,
+                 IntendedUse.responsibility] {
+        #expect(flat.contains(text.split(whereSeparator: \.isWhitespace).joined(separator: " ")), "\(text.prefix(40))")
+    }
 }
 
 @Test func theEveryPageLineIsThePlansWording() throws {

@@ -24,6 +24,7 @@ struct AboutView: View {
                     section("Intended Use") {
                         Text(IntendedUse.statement)
                         Text(IntendedUse.everyPage).fontWeight(.semibold)
+                        Text(IntendedUse.regulatory)
                         Text(IntendedUse.responsibility)
                     }
                     section("How to Cite") {
@@ -39,15 +40,17 @@ struct AboutView: View {
                         Text("""
                             MOOSE is the work of its authors (ENHANCE.PET) and licensed under the Apache \
                             License 2.0; this app is based on MOOSE and is neither made nor endorsed by \
-                            them. The MOOSE model weights are licensed under CC BY 4.0 by their authors; \
-                            the bundled checkpoints were reduced to the network weights needed for \
-                            inference. The MOOSE model weights in this app are licensed under CC BY 4.0; \
-                            nothing in this app's license restricts the rights that license grants.
+                            them. The MOOSE model weights are licensed under CC BY 4.0 by their authors \
+                            (https://creativecommons.org/licenses/by/4.0/); the bundled checkpoints were \
+                            reduced to the network weights needed for inference, which are unchanged. \
+                            Nothing in this app's license restricts the rights that license grants.
                             """)
                         Text("""
-                            The app works offline: it has no network access, and no data leaves this \
-                            Mac. It is provided as is, without warranty of any kind.
+                            The case report embeds DejaVu Sans (Bitstream Vera and Arev font licences). \
+                            Every component's licence text is listed below.
                             """)
+                        Text("The app works offline: it has no network access, and no data leaves this Mac.")
+                        Text(IntendedUse.warranty)
                     }
                 }
                 .textSelection(.enabled)

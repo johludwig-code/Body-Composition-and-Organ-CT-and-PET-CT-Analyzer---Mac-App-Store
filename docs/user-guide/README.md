@@ -6,13 +6,15 @@ device; not for diagnosis or treatment decisions.*
 
 Research software for the automated segmentation and quantification of
 anatomical structures in CT data. Not intended for diagnosis, treatment
-planning, or any other clinical decision-making.
+planning, or any other clinical decision-making. It carries no CE marking
+and no FDA clearance, and its results are not validated for any clinical
+purpose.
 
 Every segmentation and every number is a research measurement that a
 qualified person must check before it is used. Results do not belong in a
 patient's record. Ethics approval, data protection and the choice of data are
-the responsibility of the study's investigators. The app is provided as is,
-without warranty of any kind.
+the responsibility of the study's investigators. Provided as is, without
+warranty of any kind, to the extent the law permits.
 
 The app indexes folders of DICOM files, picks one CT per study, segments it
 with MOOSE on the Mac's GPU, lets you check every segmentation in a viewer,
@@ -172,11 +174,16 @@ project folder are beyond the app's reach.
 | Files of the series changed or are gone | scan the source again, then Retry Failed |
 | Not connected; its series are kept | the disk or share of a source is not mounted; connect it and choose Scan All |
 
-## Citing
+## Citing and licences
 
 Segmentations come from MOOSE (Shiyam Sundar et al., J Nucl Med 2022;
 Ferrara et al., Sci Data 2026), based on nnU-Net (Isensee et al., Nat
 Methods 2021). The model weights are licensed under CC BY 4.0 by their
-authors. The export's methods text states the versions, the hardware and
-the two corrections the app makes to MOOSE at run time; **About** lists all
-licences.
+authors (https://creativecommons.org/licenses/by/4.0/); the app ships them
+with the optimizer state removed and the network weights unchanged. MOOSE's
+code and nnU-Net are under the Apache License 2.0. The app is based on MOOSE
+and is neither made nor endorsed by its authors. The export's methods text
+states the versions, the hardware and the two corrections the app makes to
+MOOSE at run time; each case report ends with the references and the
+licences; **About** lists the licence of every component in the app, and
+`docs/legal/README.md` says where each notice appears.

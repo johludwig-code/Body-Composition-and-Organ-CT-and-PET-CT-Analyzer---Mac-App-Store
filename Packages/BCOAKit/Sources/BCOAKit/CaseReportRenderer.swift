@@ -634,7 +634,9 @@ private struct Builder {
         heading("Intended use")
         layout.paragraph(style.text(IntendedUse.everyPage, .bold), after: 2)
         layout.paragraph(style.text(IntendedUse.statement))
+        layout.paragraph(style.text(IntendedUse.regulatory))
         layout.paragraph(style.text(ReportText.notInRecord))
+        layout.paragraph(style.text(IntendedUse.warranty))
     }
 
     /// The 18 of 18F raised, as the approved page sets it.

@@ -15,3 +15,11 @@ STATEMENT = (
 # provenance sheet carry it too.
 NOT_MEDICAL_DEVICE = "Not a medical device; not for diagnosis or treatment decisions."
 EVERY_PAGE = f"{SHORT} {NOT_MEDICAL_DEVICE}"
+
+# Beside the intended use wherever it is explained at length (About, the
+# reproducibility package, the DMG's Read Me); identical to BCOAKit's.
+REGULATORY = (
+    "It carries no CE marking and no FDA clearance, and its results are not validated for "
+    "any clinical purpose."
+)
+WARRANTY = "Provided as is, without warranty of any kind, to the extent the law permits."

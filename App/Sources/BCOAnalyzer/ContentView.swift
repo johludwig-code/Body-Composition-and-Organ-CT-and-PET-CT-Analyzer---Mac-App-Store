@@ -82,6 +82,7 @@ struct ContentView: View {
                     Text("A project is a folder that holds the index, the results and the exports of one study.")
                     Text(IntendedUse.statement).font(.callout)
                     Text(IntendedUse.everyPage).font(.callout.weight(.semibold))
+                    Text(IntendedUse.regulatory).font(.caption).foregroundStyle(.secondary)
                 }
             } actions: {
                 Button("Open or Create Project…") { model.chooseProjectFolder() }

@@ -5,7 +5,9 @@ Not a medical device; not for diagnosis or treatment decisions.
 
 Research software for the automated segmentation and quantification of
 anatomical structures in CT data. Not intended for diagnosis, treatment
-planning, or any other clinical decision-making.
+planning, or any other clinical decision-making. It carries no CE marking
+and no FDA clearance, and its results are not validated for any clinical
+purpose.
 
 Every segmentation and every number is a research measurement that a
 qualified person must check before it is used. Results do not belong in a
@@ -31,7 +33,15 @@ Licences
   licences are listed in the app under About and Licenses, and in
   BCOAnalyzer.app/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md.
 
-  The app is provided as is, without warranty of any kind.
+  Provided as is, without warranty of any kind, to the extent the law
+  permits.
+
+Case reports
+  The optional PDF per case is research documentation, not a medical
+  report: values as measured, without reference values or assessment, the
+  notice on every page, the case named by pseudonym only. It does not belong
+  in the patient record. Before reports of real cases are made, the
+  institution's regulatory office classifies the app with its reports.
 
 How to cite: see About and Licenses in the app, and the methods text of each
 export.
